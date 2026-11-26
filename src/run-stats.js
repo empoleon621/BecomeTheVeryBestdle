@@ -71,9 +71,9 @@ export function trackBattle(battle, stats, trainerId) {
   }
 }
 
-export function reportRun(stats, team, outcome) {
+export function reportRun(stats, team, outcome, turns) {
   return {
-    id: stats.id, partial: stats.partial, outcome,
+    id: stats.id, partial: stats.partial, outcome, turns,
     players: team.map(set => {
       const species = Dex.species.get(set.species).id;
       return {species, ...(stats.players[species] ?? {kos: 0, damage: 0, moves: {}})};

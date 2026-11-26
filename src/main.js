@@ -311,9 +311,14 @@ function globalReport(records) {
   if (location.protocol === 'file:') return '<p>Open the game on a shared server to see global records.</p>';
   if (result?.error) return '<p>Global records are unavailable. Refresh to try again.</p>';
   if (!result?.data) return '<p>Loading global records…</p>';
-  const {runs, players, enemies} = result.data;
+  const {runs, players, enemies, fastestClear} = result.data;
   const rows = new Map(players.map(row => [row.species, row]));
+  const clear = record => record ? `<strong>${count(record.turns)} turns</strong>${record.clears > 1 ? ` · ${count(record.clears)} runs tied` : ''}`
+    : 'No recorded clear yet';
   return `<p>${count(runs)} completed guest ${runs === 1 ? 'run' : 'runs'} across all days.</p>
+    <h4>Fastest clear</h4>
+    <p>This daily challenge · ${clear(fastestClear?.daily)}</p>
+    <p>All time · ${clear(fastestClear?.allTime)}</p>
     ${players[0]?.kos ? `<p>KO leader <strong>${escape(speciesName(players[0].species))} · ${count(players[0].kos)} KOs</strong></p>` : ''}
     <h4>Global totals for your team’s species</h4>
     ${runTable(records.players.map(({species}) => rows.get(species) ?? {species, kos: 0, damage: 0, moves: []}))}
@@ -338,7 +343,7 @@ async function syncGlobalRecords(records) {
   if (location.protocol === 'file:' || sharedRecords?.id === records.id) return;
   const pending = sharedRecords = {id: records.id};
   try {
-    const response = await fetch(recordsOrigin + '/api/records', records.partial ? undefined : {
+    const response = await fetch(recordsOrigin + '/api/records?day=' + day, records.partial ? undefined : {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({guest: guestId(), run: {...records, day}}),
     });

@@ -8,6 +8,7 @@ const count = (value, max) => Number.isInteger(value) && value >= 0 && value <= 
 export function validateRun(value) {
   if (!value || !isId(value.id) || !/^\d{4}-\d{2}-\d{2}$/.test(value.day) || value.partial ||
       (value.outcome !== 'win' && value.outcome !== 'loss') ||
+      (Object.hasOwn(value, 'turns') && (!count(value.turns, 10000) || value.turns < 1)) ||
       !Array.isArray(value.players) || value.players.length !== 6 || !Array.isArray(value.enemies) || value.enemies.length > 30) return false;
   const date = new Date(value.day);
   if (!Number.isFinite(date.valueOf()) || date.toISOString().slice(0, 10) !== value.day) return false;
@@ -34,8 +35,12 @@ export function openRecords(filename) {
     CREATE TABLE IF NOT EXISTS players (species TEXT PRIMARY KEY, kos INTEGER NOT NULL, damage INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS moves (species TEXT NOT NULL, move TEXT NOT NULL, clicks INTEGER NOT NULL, PRIMARY KEY (species, move));
     CREATE TABLE IF NOT EXISTS enemies (trainer TEXT NOT NULL, species TEXT NOT NULL, kos INTEGER NOT NULL, PRIMARY KEY (trainer, species));
+    CREATE TABLE IF NOT EXISTS clears (run_id TEXT PRIMARY KEY REFERENCES runs(id), day TEXT NOT NULL, turns INTEGER NOT NULL);
+    CREATE INDEX IF NOT EXISTS fastest_clear ON clears (turns);
+    CREATE INDEX IF NOT EXISTS fastest_clear_by_day ON clears (day, turns);
   `);
   const addRun = db.prepare('INSERT INTO runs VALUES (?, ?, ?) ON CONFLICT DO NOTHING');
+  const addClear = db.prepare('INSERT INTO clears VALUES (?, ?, ?)');
   const addPlayer = db.prepare(`INSERT INTO players VALUES (?, ?, ?) ON CONFLICT (species) DO UPDATE
     SET kos = kos + excluded.kos, damage = damage + excluded.damage`);
   const addMove = db.prepare(`INSERT INTO moves VALUES (?, ?, ?) ON CONFLICT (species, move) DO UPDATE SET clicks = clicks + excluded.clicks`);
@@ -47,12 +52,15 @@ export function openRecords(filename) {
     SELECT species, move, clicks, DENSE_RANK() OVER(PARTITION BY species ORDER BY clicks DESC) AS rank FROM moves
   ) WHERE rank = 1 ORDER BY species, move`);
   const enemies = db.prepare('SELECT trainer, species, kos FROM enemies WHERE kos > 0 ORDER BY kos DESC, trainer, species');
+  const fastest = db.prepare('SELECT turns, COUNT(*) AS clears FROM clears GROUP BY turns ORDER BY turns LIMIT 1');
+  const dailyFastest = db.prepare('SELECT turns, COUNT(*) AS clears FROM clears WHERE day = ? GROUP BY turns ORDER BY turns LIMIT 1');
   return {
     add(guest, run) {
       db.exec('BEGIN IMMEDIATE');
       try {
         const accepted = addRun.run(run.id, guest, run.day).changes > 0;
         if (accepted) {
+          if (run.outcome === 'win' && run.turns !== undefined) addClear.run(run.id, run.day, run.turns);
           for (const row of run.players) {
             addPlayer.run(row.species, row.kos, row.damage);
             for (const [move, clicks] of Object.entries(row.moves)) addMove.run(row.species, move, clicks);
@@ -66,13 +74,18 @@ export function openRecords(filename) {
         throw error;
       }
     },
-    totals() {
+    totals(day) {
       const favorites = new Map();
       for (const row of moves.all()) {
         if (!favorites.has(row.species)) favorites.set(row.species, []);
         favorites.get(row.species).push(row);
       }
-      return {runs: runCount.get().total, players: players.all().map(row => ({...row, moves: favorites.get(row.species) ?? []})), enemies: enemies.all()};
+      return {
+        runs: runCount.get().total,
+        players: players.all().map(row => ({...row, moves: favorites.get(row.species) ?? []})),
+        enemies: enemies.all(),
+        fastestClear: {daily: day ? dailyFastest.get(day) ?? null : null, allTime: fastest.get() ?? null},
+      };
     },
     completed(guest, day) { return Boolean(completed.get(guest, day)); },
     close() { db.close(); },

@@ -20,7 +20,7 @@ function respond(response, status, value, headers = {}) {
 
 createServer(async (request, response) => {
   try {
-    const path = new URL(request.url, 'http://localhost').pathname;
+    const {pathname: path, searchParams} = new URL(request.url, 'http://localhost');
     if (path.startsWith('/api/') && pagesOrigin && request.headers.origin === pagesOrigin) {
       response.setHeader('Access-Control-Allow-Origin', pagesOrigin);
       response.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Bestdle-Guest');
@@ -32,12 +32,12 @@ createServer(async (request, response) => {
     }
     const savedGuest = request.headers.cookie?.match(/(?:^|;\s*)bestdle_guest=([a-f0-9]{32})(?:;|$)/)?.[1];
     if (path === '/api/guest' && request.method === 'GET') {
-      const day = new URL(request.url, 'http://localhost').searchParams.get('day');
+      const day = searchParams.get('day');
       const guest = savedGuest ?? request.headers['x-bestdle-guest'];
       if (!isId(guest) || !/^\d{4}-\d{2}-\d{2}$/.test(day ?? '')) return respond(response, 400, {error: 'Invalid guest or date.'});
       return respond(response, 200, {completed: records.completed(guest, day)});
     }
-    if (path === '/api/records' && request.method === 'GET') return respond(response, 200, records.totals());
+    if (path === '/api/records' && request.method === 'GET') return respond(response, 200, records.totals(searchParams.get('day')));
     if (path === '/api/records' && request.method === 'POST') {
       if (request.headers['content-type']?.split(';')[0] !== 'application/json') return respond(response, 415, {error: 'Expected JSON.'});
       let source = '';
@@ -51,7 +51,7 @@ createServer(async (request, response) => {
       if (!isId(guest) || !validateRun(body?.run)) return respond(response, 400, {error: 'Invalid run record.'});
       const accepted = records.add(guest, body.run);
       const secure = request.socket.encrypted || request.headers['x-forwarded-proto'] === 'https' ? '; Secure' : '';
-      return respond(response, 200, {accepted, ...records.totals()}, {
+      return respond(response, 200, {accepted, ...records.totals(body.run.day)}, {
         'Set-Cookie': `${cookie}=${guest}; Path=/api; Max-Age=31536000; HttpOnly; SameSite=Lax${secure}`,
       });
     }

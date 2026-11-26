@@ -26,12 +26,44 @@ test('both copies of a daily run have identical counters, including after a mid-
   const {id: second, ...two} = playDefeat(true);
   assert.notEqual(first, second);
   assert.deepEqual(one, two);
+  assert.equal(one.turns, 24);
   assert.equal(one.players.length, 6);
   const slaking = one.players.find(row => row.species === 'slaking');
   assert.deepEqual(slaking, {species: 'slaking', kos: 4, damage: 872, moves: {gigaimpact: 4}});
   assert.deepEqual(one.enemies, [
     {trainer: 'flint', species: 'infernape', kos: 3}, {trainer: 'flint', species: 'arcanine', kos: 3},
   ]);
+});
+
+test('fastest clear ranks wins across dates and counts ties once per guest', () => {
+  const loss = playDefeat(false);
+  const store = openRecords(':memory:');
+  const fastestClear = date => JSON.parse(JSON.stringify(store.totals(date))).fastestClear;
+  try {
+    assert.equal(store.add(idFor(1), {...loss, turns: 1}), true);
+    assert.deepEqual(fastestClear(day), {daily: null, allTime: null});
+
+    const win = {...loss, id: idFor(10), outcome: 'win', turns: 38};
+    assert.equal(validateRun(win), true);
+    assert.equal(validateRun({...win, turns: 0}), false);
+    assert.equal(validateRun({...win, turns: 1.5}), false);
+    assert.equal(store.add(idFor(2), win), true);
+    assert.equal(store.add(idFor(2), {...win, id: idFor(11), turns: 12}), false);
+    assert.equal(store.add(idFor(3), {...win, id: idFor(12)}), true);
+    assert.deepEqual(fastestClear(day), {
+      daily: {turns: 38, clears: 2}, allTime: {turns: 38, clears: 2},
+    });
+
+    const tomorrow = '2026-11-27';
+    assert.equal(store.add(idFor(2), {...win, id: idFor(13), day: tomorrow, turns: 31}), true);
+    assert.equal(store.add(idFor(4), {...win, id: idFor(14), turns: undefined}), true);
+    assert.deepEqual(fastestClear(day), {
+      daily: {turns: 38, clears: 2}, allTime: {turns: 31, clears: 1},
+    });
+    assert.deepEqual(fastestClear(tomorrow).daily, {turns: 31, clears: 1});
+  } finally {
+    store.close();
+  }
 });
 
 test('shared counters count distinct guests once per date and reject mismatched teams', () => {
