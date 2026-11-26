@@ -226,11 +226,15 @@ function rewardMenu(view) {
 function actions(view) {
   if (view.phase !== 'battle') {
     const won = view.phase !== 'defeat';
-    const title = view.phase === 'champion' ? 'You’re the champion!' : won ? view.trainer.name + ' was defeated!' : 'Your run ended.';
+    const title = view.phase === 'champion' ? 'You’re the champion!' : won ? view.trainer.name + ' was defeated!' : 'Your run ended';
     const description = view.phase === 'advance' ? 'Next up: ' + view.next.name + ' · ' + caption(view.next) :
       `${view.wins} of 5 battles won in ${view.totalTurns} turns.`;
     return `<div class="results ${view.phase === 'advance' ? 'reward-result' : ''}">
-      <div class="result-main"><span class="result-symbol" aria-hidden="true">${won ? '★' : '×'}</span><div><h3>${escape(title)}</h3><p>${escape(description)}</p></div></div>
+      <div class="result-main">${won ? '<span class="result-symbol" aria-hidden="true">★</span>' : ''}<div>
+        <h3>${escape(title)}</h3>
+        ${view.records ? `<p id="result-percentile" aria-live="polite">${progressPercentile(view.records)}</p>` : ''}
+        <p>${escape(description)}</p>
+      </div></div>
       ${view.phase === 'advance' ? rewardMenu(view) :
       `<div class="result-buttons"><button class="primary" data-action="copy">${copied ? 'Result copied ✓' : 'Copy result'}</button></div>`}
     </div>`;
@@ -289,30 +293,40 @@ const count = value => numberFormat.format(value);
 
 function mostClicked(moves) {
   return moves.length ? moves.map(({move}) => escape(Dex.moves.get(move).name)).join(', ') +
-    ' ×' + count(moves[0].clicks) : '—';
+    ' ×' + count(moves[0].clicks) : 'No move clicked';
 }
 
-function runTable(rows) {
-  return `<table class="run-table"><thead><tr><th scope="col">Pokémon</th><th scope="col">KOs</th>
-    <th scope="col">HP dealt</th><th scope="col">Most clicked move</th></tr></thead><tbody>
-    ${rows.map(row => `<tr><th scope="row">${escape(speciesName(row.species))}</th><td>${count(row.kos)}</td>
-      <td>${count(row.damage)}</td><td>${mostClicked(row.moves)}</td></tr>`).join('')}
-  </tbody></table>`;
+function reportDropdown(title, contents) {
+  return `<details class="report-dropdown"><summary>${title}</summary><div class="report-dropdown-body">${contents}</div></details>`;
+}
+
+function teamStats(rows, {koTitle, koLeader = ''}) {
+  const list = (value, sortedBy) => `<ul class="report-rows">${(sortedBy ?
+    [...rows].sort((a, b) => b[sortedBy] - a[sortedBy]) : rows).map(row => `<li>
+    <span>${escape(speciesName(row.species))}</span><strong>${value(row)}</strong></li>`).join('')}</ul>`;
+  return reportDropdown(koTitle, koLeader + list(row => `${count(row.kos)} KO${row.kos === 1 ? '' : 's'}`, 'kos')) +
+    reportDropdown('Damage dealt', list(row => `${count(row.damage)} HP`, 'damage')) +
+    reportDropdown('Most-clicked moves', list(row => mostClicked(row.moves)));
 }
 
 function enemyRecords(rows) {
-  return rows.length ? `<ul class="enemy-records">${rows.map(row => `<li>
+  return rows.length ? `<ul class="report-rows">${rows.map(row => `<li>
     <span>${escape(speciesName(row.species))} · ${escape(row.trainer[0].toUpperCase() + row.trainer.slice(1))}</span>
     <strong>${count(row.kos)} KO${row.kos === 1 ? '' : 's'}</strong></li>`).join('')}</ul>` : '<p>No opposing Pokémon recorded a KO.</p>';
 }
 
-function progressPercentile(defeated, distribution, included) {
+function progressPercentile(records) {
+  const result = sharedRecords?.id === records.id ? sharedRecords : null;
+  if (location.protocol === 'file:' || result?.error) return 'Progress percentile unavailable.';
+  if (!result?.data) return 'Loading progress percentile…';
+  const {dailyProgress: distribution = [], progressRecorded: included = false} = result.data;
+  const {defeated} = records;
   const others = distribution.reduce((sum, bucket) => sum + bucket.runs, 0) - Number(included);
-  if (others < 1) return '<p>Another finished run is needed for a comparison.</p>';
+  if (others < 1) return 'Progress percentile · Waiting for another finished run.';
   const behind = distribution.filter(bucket => bucket.defeated < defeated).reduce((sum, bucket) => sum + bucket.runs, 0);
   const tied = (distribution.find(bucket => bucket.defeated === defeated)?.runs ?? 0) - Number(included);
-  return `<p>Ahead of <strong>${count(Math.floor(behind * 100 / others))}%</strong> of the other ${count(others)}
-    finished ${others === 1 ? 'run' : 'runs'} on this daily challenge.${tied ? ` ${count(tied)} tied.` : ''}</p>`;
+  return `Ahead of <strong>${count(Math.floor(behind * 100 / others))}%</strong> of the other
+    finished ${others === 1 ? 'run' : 'runs'} on this daily challenge.${tied ? ` ${count(tied)} tied.` : ''}`;
 }
 
 function globalReport(records) {
@@ -320,20 +334,17 @@ function globalReport(records) {
   if (location.protocol === 'file:') return '<p>Open the game on a shared server to see global records.</p>';
   if (result?.error) return '<p>Global records are unavailable. Refresh to try again.</p>';
   if (!result?.data) return '<p>Loading global records…</p>';
-  const {runs, players, enemies, fastestClear, dailyProgress = [], progressRecorded = false} = result.data;
+  const {runs, players, enemies, fastestClear} = result.data;
   const rows = new Map(players.map(row => [row.species, row]));
+  const team = records.players.map(({species}) => rows.get(species) ?? {species, kos: 0, damage: 0, moves: []});
   const clear = record => record ? `<strong>${count(record.turns)} turns</strong>${record.clears > 1 ? ` · ${count(record.clears)} runs tied` : ''}`
     : 'No recorded clear yet';
+  const koLeader = players[0]?.kos ? `<p>Overall leader <strong>${escape(speciesName(players[0].species))} · ${count(players[0].kos)} KOs</strong></p>` : '';
   return `<p>${count(runs)} completed guest ${runs === 1 ? 'run' : 'runs'} across all days.</p>
-    <h4>Progress percentile</h4>
-    ${progressPercentile(records.defeated, dailyProgress, progressRecorded)}
-    <h4>Fastest clear</h4>
-    <p>This daily challenge · ${clear(fastestClear?.daily)}</p>
-    <p>All time · ${clear(fastestClear?.allTime)}</p>
-    ${players[0]?.kos ? `<p>KO leader <strong>${escape(speciesName(players[0].species))} · ${count(players[0].kos)} KOs</strong></p>` : ''}
-    <h4>Global totals for your team’s species</h4>
-    ${runTable(records.players.map(({species}) => rows.get(species) ?? {species, kos: 0, damage: 0, moves: []}))}
-    <h4>Deadliest opponents worldwide</h4>${enemyRecords(enemies.slice(0, 5))}`;
+    ${teamStats(team, {koTitle: 'Pokémon KO leaderboard', koLeader})}
+    ${reportDropdown('Deadliest opponents', enemyRecords(enemies.slice(0, 5)))}
+    ${reportDropdown('Fastest clear', `<p>This daily challenge · ${clear(fastestClear?.daily)}</p>
+      <p>All time · ${clear(fastestClear?.allTime)}</p>`)}`;
 }
 
 function runReport(records) {
@@ -343,11 +354,15 @@ function runReport(records) {
   });
   return `<section class="panel-body run-report" aria-labelledby="run-report-heading">
     <h3 id="run-report-heading">Run report</h3>
+    <h4>Global stats</h4>
+    <div id="global-records" class="report-group" aria-live="polite">${globalReport(records)}</div>
+    <h4>Your run</h4>
     <p>Opposing Pokémon defeated · <strong>${count(records.defeated)} / 30</strong></p>
     ${records.partial ? '<p>This run started before tracking was added. Your report covers the battles tracked after the update.</p>' : ''}
-    ${runTable(rows)}
-    <h4>Opponents that scored KOs</h4>${enemyRecords(records.enemies)}
-    <h3>Global records</h3><div id="global-records" aria-live="polite">${globalReport(records)}</div>
+    <div class="report-group">
+      ${teamStats(rows, {koTitle: 'Pokémon KOs'})}
+      ${reportDropdown('Opponents that scored KOs', enemyRecords(records.enemies))}
+    </div>
   </section>`;
 }
 
@@ -367,6 +382,8 @@ async function syncGlobalRecords(records) {
   if (sharedRecords === pending) {
     const report = document.querySelector('#global-records');
     if (report) report.innerHTML = globalReport(records);
+    const percentile = document.querySelector('#result-percentile');
+    if (percentile) percentile.innerHTML = progressPercentile(records);
   }
 }
 

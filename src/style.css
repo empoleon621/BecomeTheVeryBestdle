@@ -218,8 +218,9 @@ kbd { border: 1px solid #a4a797; border-radius: 2px; font: 500 9px/15px var(--mo
 .results, .result-main, .result-buttons { display: flex; align-items: center; gap: 8px; }
 .results { min-height: 105px; justify-content: space-between; }
 .result-symbol { font-size: 23px; color: #7e562d; }
-.result-main h3 { font: 700 25px/1 var(--pixel); }
+.result-main h3 { font: 400 clamp(23px, 4vw, 29px)/1.13 var(--dialogue); }
 .result-main p { margin-top: 5px; color: var(--muted); font-size: 13px; }
+#result-percentile { color: var(--accent); font-size: 17px; line-height: 1.25; }
 .reward-result.results { flex-direction: column; align-items: stretch; gap: 12px; }
 .reward-menu { border-top: 1px solid var(--line); padding-top: 9px; }
 .reward-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
@@ -233,15 +234,16 @@ kbd { border: 1px solid #a4a797; border-radius: 2px; font: 500 9px/15px var(--mo
 .run-report h3 { font: 400 22px/1.1 var(--pixel); }
 .run-report h4 { font: 400 17px/1.2 var(--pixel); }
 .run-report p { color: var(--muted); font-size: 15px; }
-.run-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 15px; }
-.run-table th, .run-table td { text-align: left; padding: 5px 4px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
-.run-table th:first-child { width: 29%; }
-.run-table th:nth-child(2) { width: 11%; }
-.run-table th:nth-child(3) { width: 21%; }
-.run-table tbody th { font-weight: 400; }
-.enemy-records { list-style: none; margin: 0; padding: 0; font-size: 15px; }
-.enemy-records li { display: flex; justify-content: space-between; gap: 8px; padding: 4px; border-bottom: 1px solid var(--line); }
-#global-records { display: grid; gap: 8px; }
+.report-group { display: grid; gap: 5px; }
+.report-dropdown { border: 1px solid var(--line); border-radius: 3px; background: #f9faf3; }
+.report-dropdown summary { padding: 7px 9px; cursor: pointer; color: var(--accent); font: 400 17px/1.15 var(--dialogue); }
+.report-dropdown[open] summary { border-bottom: 1px solid var(--line); background: #eaf0e5; }
+.report-dropdown-body { padding: 4px 9px; }
+.report-dropdown-body p { padding-block: 4px; }
+.report-rows { list-style: none; margin: 0; padding: 0; font-size: 15px; }
+.report-rows li { display: flex; justify-content: space-between; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--line); }
+.report-rows li:last-child { border-bottom: 0; }
+.report-rows strong { text-align: right; }
 .record { margin-top: 8px; padding: 7px 1px; border-bottom: 1px solid var(--line); }
 .record summary { cursor: pointer; font-weight: 700; font-size: 12px; color: var(--accent); }
 #battle-log { padding: 5px 4px; margin-top: 4px; height: 110px; overflow: auto; list-style: none; scrollbar-width: thin; }
