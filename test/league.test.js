@@ -119,7 +119,7 @@ test('one reward can revive a fainted target or fill the HP of two injured livin
   assert.equal(won.advance('revive', ['pyroar']), false);
   assert.equal(won.advance('revive', ['reshiram']), true);
   const revived = won.view().team.find(member => member.id === 'reshiram');
-  assert.equal(revived.hp, Math.floor(fainted.maxhp / 2));
+  assert.equal(revived.hp, fainted.maxhp);
   assert.ok(revived.moves.every(move => move.pp === move.maxpp));
   assert.equal(won.view().bag.revive, 0);
 

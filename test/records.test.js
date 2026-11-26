@@ -43,7 +43,7 @@ test('fastest clear ranks wins across dates and counts ties once per guest', () 
     assert.equal(store.add(idFor(1), {...loss, turns: 1}), true);
     assert.deepEqual(fastestClear(day), {daily: null, allTime: null});
 
-    const win = {...loss, id: idFor(10), outcome: 'win', turns: 38};
+    const win = {...loss, id: idFor(10), outcome: 'win', turns: 38, defeated: 30};
     assert.equal(validateRun(win), true);
     assert.equal(validateRun({...win, turns: 0}), false);
     assert.equal(validateRun({...win, turns: 1.5}), false);
@@ -61,6 +61,29 @@ test('fastest clear ranks wins across dates and counts ties once per guest', () 
       daily: {turns: 38, clears: 2}, allTime: {turns: 31, clears: 1},
     });
     assert.deepEqual(fastestClear(tomorrow).daily, {turns: 31, clears: 1});
+  } finally {
+    store.close();
+  }
+});
+
+test('daily progress records finished losses and wins without counting duplicate submissions', () => {
+  const loss = playDefeat(false);
+  const store = openRecords(':memory:');
+  try {
+    assert.equal(loss.defeated, 4);
+    assert.equal(validateRun({...loss, defeated: -1}), false);
+    assert.equal(validateRun({...loss, outcome: 'win', defeated: 29}), false);
+    assert.equal(store.add(idFor(1), loss), true);
+    assert.equal(store.add(idFor(1), {...loss, id: idFor(20), defeated: 9}), false);
+    assert.equal(store.hasProgress(loss.id, idFor(1)), true);
+    assert.equal(store.hasProgress(loss.id, idFor(2)), false);
+    assert.equal(store.add(idFor(2), {...loss, id: idFor(21), defeated: 9}), true);
+    assert.equal(store.add(idFor(3), {...loss, id: idFor(22), defeated: 30, outcome: 'win'}), true);
+    const distribution = date => JSON.parse(JSON.stringify(store.totals(date))).dailyProgress;
+    assert.deepEqual(distribution(day), [
+      {defeated: 4, runs: 1}, {defeated: 9, runs: 1}, {defeated: 30, runs: 1},
+    ]);
+    assert.deepEqual(distribution('2026-11-27'), []);
   } finally {
     store.close();
   }

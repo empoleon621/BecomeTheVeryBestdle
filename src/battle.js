@@ -337,7 +337,7 @@ export class LeagueRun {
           !targets.every(id => eligible.some(member => member.id === id))) return false;
       for (const id of targets) {
         const member = party.find(candidate => candidate.id === id);
-        if (reward === 'revive') useMedicine('revive', member);
+        if (reward === 'revive') useMedicine('maxrevive', member);
         else if (reward === 'heal') member.hp = member.maxhp;
         else {
           const {set} = battle.p1.pokemon.find(pokemon => speciesId(pokemon.set) === id);
@@ -447,7 +447,11 @@ export class LeagueRun {
     const summary = {
       trainer, phase, wins: this.wins, bag: {...this.bag}, canUseBag: this.canUseBag,
       rewardOffers: phase === 'advance' ? rewardOffers(this.day, this.round) : [],
-      records: outcome ? reportRun(this.stats, this.team, outcome, totalTurns) : null,
+      records: outcome ? reportRun(this.stats, this.team, {
+        outcome, turns: totalTurns,
+        defeated: this.league.slice(0, this.round).reduce((sum, opponent) => sum + opponent.team.length, 0) +
+          this.battle.p2.pokemon.filter(pokemon => pokemon.fainted).length,
+      }) : null,
       next: this.league[this.round + 1], error: this.error,
       totalTurns,
     };

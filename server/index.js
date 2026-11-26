@@ -51,7 +51,7 @@ createServer(async (request, response) => {
       if (!isId(guest) || !validateRun(body?.run)) return respond(response, 400, {error: 'Invalid run record.'});
       const accepted = records.add(guest, body.run);
       const secure = request.socket.encrypted || request.headers['x-forwarded-proto'] === 'https' ? '; Secure' : '';
-      return respond(response, 200, {accepted, ...records.totals(body.run.day)}, {
+      return respond(response, 200, {accepted, progressRecorded: records.hasProgress(body.run.id, guest), ...records.totals(body.run.day)}, {
         'Set-Cookie': `${cookie}=${guest}; Path=/api; Max-Age=31536000; HttpOnly; SameSite=Lax${secure}`,
       });
     }

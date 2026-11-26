@@ -60,7 +60,7 @@ export const bagItems = {
 
 export const rewards = {
   level: {name: '+5 levels', description: 'Raise one Pokémon by five levels, up to level 100.', targets: 1},
-  revive: {name: 'Revive', description: 'Bring one fainted Pokémon back at half HP.', targets: 1},
+  revive: {name: 'Revive', description: 'Bring one fainted Pokémon back at full HP.', targets: 1},
   heal: {name: 'Full HP', description: 'Heal up to two living Pokémon to full HP.', targets: 2},
   fullrestores: {name: '3 Full Restores', description: 'Add three Full Restores to your bag.', targets: 0, item: 'fullrestore', quantity: 3},
   maxrevive: {name: '1 Max Revive', description: 'Add one Max Revive to your bag.', targets: 0, item: 'maxrevive', quantity: 1},

@@ -306,16 +306,27 @@ function enemyRecords(rows) {
     <strong>${count(row.kos)} KO${row.kos === 1 ? '' : 's'}</strong></li>`).join('')}</ul>` : '<p>No opposing Pokémon recorded a KO.</p>';
 }
 
+function progressPercentile(defeated, distribution, included) {
+  const others = distribution.reduce((sum, bucket) => sum + bucket.runs, 0) - Number(included);
+  if (others < 1) return '<p>Another finished run is needed for a comparison.</p>';
+  const behind = distribution.filter(bucket => bucket.defeated < defeated).reduce((sum, bucket) => sum + bucket.runs, 0);
+  const tied = (distribution.find(bucket => bucket.defeated === defeated)?.runs ?? 0) - Number(included);
+  return `<p>Ahead of <strong>${count(Math.floor(behind * 100 / others))}%</strong> of the other ${count(others)}
+    finished ${others === 1 ? 'run' : 'runs'} on this daily challenge.${tied ? ` ${count(tied)} tied.` : ''}</p>`;
+}
+
 function globalReport(records) {
   const result = sharedRecords?.id === records.id ? sharedRecords : null;
   if (location.protocol === 'file:') return '<p>Open the game on a shared server to see global records.</p>';
   if (result?.error) return '<p>Global records are unavailable. Refresh to try again.</p>';
   if (!result?.data) return '<p>Loading global records…</p>';
-  const {runs, players, enemies, fastestClear} = result.data;
+  const {runs, players, enemies, fastestClear, dailyProgress = [], progressRecorded = false} = result.data;
   const rows = new Map(players.map(row => [row.species, row]));
   const clear = record => record ? `<strong>${count(record.turns)} turns</strong>${record.clears > 1 ? ` · ${count(record.clears)} runs tied` : ''}`
     : 'No recorded clear yet';
   return `<p>${count(runs)} completed guest ${runs === 1 ? 'run' : 'runs'} across all days.</p>
+    <h4>Progress percentile</h4>
+    ${progressPercentile(records.defeated, dailyProgress, progressRecorded)}
     <h4>Fastest clear</h4>
     <p>This daily challenge · ${clear(fastestClear?.daily)}</p>
     <p>All time · ${clear(fastestClear?.allTime)}</p>
@@ -332,6 +343,7 @@ function runReport(records) {
   });
   return `<section class="panel-body run-report" aria-labelledby="run-report-heading">
     <h3 id="run-report-heading">Run report</h3>
+    <p>Opposing Pokémon defeated · <strong>${count(records.defeated)} / 30</strong></p>
     ${records.partial ? '<p>This run started before tracking was added. Your report covers the battles tracked after the update.</p>' : ''}
     ${runTable(rows)}
     <h4>Opponents that scored KOs</h4>${enemyRecords(records.enemies)}
@@ -702,7 +714,7 @@ async function doAction(action) {
     dialog('How to play', `<ol class="rules">
       <li>Start with six Pokémon and an empty bag. The draft and opponents rotate at midnight UTC.</li>
       <li>Pick your lead before each battle. Use Fight to attack, Party to switch, or Bag to use an item. Items spend a turn during battle.</li>
-      <li>After each Elite Four win, claim one of three randomly offered rewards. The pool includes +5 levels for one Pokémon, a half-HP revive, full HP for up to two living Pokémon, three Full Restores, or one Max Revive.</li>
+      <li>After each Elite Four win, claim one of three randomly offered rewards. The pool includes +5 levels for one Pokémon, a full-HP revive, full HP for up to two living Pokémon, three Full Restores, or one Max Revive.</li>
       <li>Move PP refills between battles. Levels, HP, fainting, status, and held items carry over. A Max Revive brings a fainted Pokémon back at full HP.</li>
       <li>Beat four Elite Four members and the Champion to finish the run. Your progress saves in this browser.</li>
       <li>Complete one run per browser each UTC day. Your run report and the global records appear when the run ends.</li>

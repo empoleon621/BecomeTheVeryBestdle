@@ -9,6 +9,7 @@ export function validateRun(value) {
   if (!value || !isId(value.id) || !/^\d{4}-\d{2}-\d{2}$/.test(value.day) || value.partial ||
       (value.outcome !== 'win' && value.outcome !== 'loss') ||
       (Object.hasOwn(value, 'turns') && (!count(value.turns, 10000) || value.turns < 1)) ||
+      (Object.hasOwn(value, 'defeated') && (!count(value.defeated, 30) || (value.outcome === 'win' && value.defeated !== 30))) ||
       !Array.isArray(value.players) || value.players.length !== 6 || !Array.isArray(value.enemies) || value.enemies.length > 30) return false;
   const date = new Date(value.day);
   if (!Number.isFinite(date.valueOf()) || date.toISOString().slice(0, 10) !== value.day) return false;
@@ -38,9 +39,12 @@ export function openRecords(filename) {
     CREATE TABLE IF NOT EXISTS clears (run_id TEXT PRIMARY KEY REFERENCES runs(id), day TEXT NOT NULL, turns INTEGER NOT NULL);
     CREATE INDEX IF NOT EXISTS fastest_clear ON clears (turns);
     CREATE INDEX IF NOT EXISTS fastest_clear_by_day ON clears (day, turns);
+    CREATE TABLE IF NOT EXISTS progress (run_id TEXT PRIMARY KEY REFERENCES runs(id), day TEXT NOT NULL, defeated INTEGER NOT NULL);
+    CREATE INDEX IF NOT EXISTS progress_by_day ON progress (day, defeated);
   `);
   const addRun = db.prepare('INSERT INTO runs VALUES (?, ?, ?) ON CONFLICT DO NOTHING');
   const addClear = db.prepare('INSERT INTO clears VALUES (?, ?, ?)');
+  const addProgress = db.prepare('INSERT INTO progress VALUES (?, ?, ?)');
   const addPlayer = db.prepare(`INSERT INTO players VALUES (?, ?, ?) ON CONFLICT (species) DO UPDATE
     SET kos = kos + excluded.kos, damage = damage + excluded.damage`);
   const addMove = db.prepare(`INSERT INTO moves VALUES (?, ?, ?) ON CONFLICT (species, move) DO UPDATE SET clicks = clicks + excluded.clicks`);
@@ -54,6 +58,8 @@ export function openRecords(filename) {
   const enemies = db.prepare('SELECT trainer, species, kos FROM enemies WHERE kos > 0 ORDER BY kos DESC, trainer, species');
   const fastest = db.prepare('SELECT turns, COUNT(*) AS clears FROM clears GROUP BY turns ORDER BY turns LIMIT 1');
   const dailyFastest = db.prepare('SELECT turns, COUNT(*) AS clears FROM clears WHERE day = ? GROUP BY turns ORDER BY turns LIMIT 1');
+  const dailyProgress = db.prepare('SELECT defeated, COUNT(*) AS runs FROM progress WHERE day = ? GROUP BY defeated ORDER BY defeated');
+  const recordedProgress = db.prepare('SELECT 1 FROM progress JOIN runs ON runs.id = progress.run_id WHERE runs.id = ? AND guest = ?');
   return {
     add(guest, run) {
       db.exec('BEGIN IMMEDIATE');
@@ -61,6 +67,7 @@ export function openRecords(filename) {
         const accepted = addRun.run(run.id, guest, run.day).changes > 0;
         if (accepted) {
           if (run.outcome === 'win' && run.turns !== undefined) addClear.run(run.id, run.day, run.turns);
+          if (run.defeated !== undefined) addProgress.run(run.id, run.day, run.defeated);
           for (const row of run.players) {
             addPlayer.run(row.species, row.kos, row.damage);
             for (const [move, clicks] of Object.entries(row.moves)) addMove.run(row.species, move, clicks);
@@ -85,9 +92,11 @@ export function openRecords(filename) {
         players: players.all().map(row => ({...row, moves: favorites.get(row.species) ?? []})),
         enemies: enemies.all(),
         fastestClear: {daily: day ? dailyFastest.get(day) ?? null : null, allTime: fastest.get() ?? null},
+        dailyProgress: day ? dailyProgress.all(day) : [],
       };
     },
     completed(guest, day) { return Boolean(completed.get(guest, day)); },
+    hasProgress(id, guest) { return Boolean(recordedProgress.get(id, guest)); },
     close() { db.close(); },
   };
 }
