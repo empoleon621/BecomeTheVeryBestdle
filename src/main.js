@@ -322,11 +322,11 @@ function progressPercentile(records) {
   const {dailyProgress: distribution = [], progressRecorded: included = false} = result.data;
   const {defeated} = records;
   const others = distribution.reduce((sum, bucket) => sum + bucket.runs, 0) - Number(included);
-  if (others < 1) return 'Progress percentile · Waiting for another finished run.';
+  if (others < 1) return 'Progress percentile · Waiting for another player to finish.';
   const behind = distribution.filter(bucket => bucket.defeated < defeated).reduce((sum, bucket) => sum + bucket.runs, 0);
   const tied = (distribution.find(bucket => bucket.defeated === defeated)?.runs ?? 0) - Number(included);
-  return `Ahead of <strong>${count(Math.floor(behind * 100 / others))}%</strong> of the other
-    finished ${others === 1 ? 'run' : 'runs'} on this daily challenge.${tied ? ` ${count(tied)} tied.` : ''}`;
+  return `You got farther than <strong>${count(Math.floor(behind * 100 / others))}%</strong> of the other players
+    who finished this challenge.${tied ? ` ${count(tied)} tied.` : ''}`;
 }
 
 function globalReport(records) {
@@ -339,11 +339,12 @@ function globalReport(records) {
   const team = records.players.map(({species}) => rows.get(species) ?? {species, kos: 0, damage: 0, moves: []});
   const clear = record => record ? `<strong>${count(record.turns)} turns</strong>${record.clears > 1 ? ` · ${count(record.clears)} runs tied` : ''}`
     : 'No recorded clear yet';
-  const koLeader = players[0]?.kos ? `<p>Overall leader <strong>${escape(speciesName(players[0].species))} · ${count(players[0].kos)} KOs</strong></p>` : '';
-  return `<p>${count(runs)} completed guest ${runs === 1 ? 'run' : 'runs'} across all days.</p>
-    ${teamStats(team, {koTitle: 'Pokémon KO leaderboard', koLeader})}
+  const koLeader = players[0]?.kos ? `<p><strong>${escape(speciesName(players[0].species))}</strong> leads overall with ${count(players[0].kos)} KOs.</p>` : '';
+  return `<p>${count(runs)} finished ${runs === 1 ? 'run' : 'runs'} in total.</p>
+    ${teamStats(team, {koTitle: 'Pokémon KO leaderboard',
+      koLeader: koLeader + '<p>KO totals for your six Pokémon across everyone’s runs.</p>'})}
     ${reportDropdown('Deadliest opponents', enemyRecords(enemies.slice(0, 5)))}
-    ${reportDropdown('Fastest clear', `<p>This daily challenge · ${clear(fastestClear?.daily)}</p>
+    ${reportDropdown('Fastest clear', `<p>This challenge · ${clear(fastestClear?.daily)}</p>
       <p>All time · ${clear(fastestClear?.allTime)}</p>`)}`;
 }
 
@@ -354,10 +355,10 @@ function runReport(records) {
   });
   return `<section class="panel-body run-report" aria-labelledby="run-report-heading">
     <h3 id="run-report-heading">Run report</h3>
-    <h4>Global stats</h4>
+    <h4>Everyone’s stats</h4>
     <div id="global-records" class="report-group" aria-live="polite">${globalReport(records)}</div>
-    <h4>Your run</h4>
-    <p>Opposing Pokémon defeated · <strong>${count(records.defeated)} / 30</strong></p>
+    <h4>Your stats</h4>
+    <p>Pokémon defeated · <strong>${count(records.defeated)} of 30</strong></p>
     ${records.partial ? '<p>This run started before tracking was added. Your report covers the battles tracked after the update.</p>' : ''}
     <div class="report-group">
       ${teamStats(rows, {koTitle: 'Pokémon KOs'})}
