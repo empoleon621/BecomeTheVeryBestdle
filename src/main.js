@@ -796,6 +796,7 @@ async function doAction(action) {
       <li>Kaori, Naokohiro, Draboon, and <a href="https://eeveeexpo.com/resources/609/">PurpleZaffre</a> for overworld sprite resources. Xysmaniac, pret, huderlem, and grunt-lucas for <a href="https://eeveeexpo.com/resources/1689/">Emerald Essentials</a> resources.</li>
       <li>Lemon, Jackster, GameMaster12, and StayPuft for HGSS interface resources. Pixel-Boy and AAA’s <a href="https://pixel-boy.itch.io/ninja-adventure-asset-pack">Ninja Adventure</a> for the move frames.</li>
       <li><a href="https://www.smogon.com/dex/sv/pokemon/">Smogon Strategy Dex</a> for moveset references.</li>
+      <li><a href="https://www.smogon.com/forums/threads/sv-monotype-sample-teams.3733750/">SV Monotype sample teams</a> and <a href="https://www.smogon.com/forums/threads/ss-monotype-sample-teams-isle-of-armor.3658745/">SS Isle of Armor Monotype sample teams</a> for additional Elite Four sets.</li>
     </ul>`);
   }
   if (action === 'bug-report') {

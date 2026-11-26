@@ -109,6 +109,10 @@ and assembly, pret for pokeemerald, huderlem for Porymap, and grunt-lucas
 for Porytiles.
 Some movesets were adapted from the Smogon Strategy Dex
 (https://www.smogon.com/dex/sv/pokemon/).
+Additional Elite Four sets are from contributors to these approved Smogon archives:
+https://www.smogon.com/forums/threads/sv-monotype-sample-teams.3733750/
+https://www.smogon.com/forums/threads/ss-monotype-sample-teams-isle-of-armor.3658745/
+Individual team credits and source links are in src/elite-monotype-sets.js.
 
 HeartGold/SoulSilver UI artwork from user-provided sheets:
 Text Boxes (sheet credit: Lemon);

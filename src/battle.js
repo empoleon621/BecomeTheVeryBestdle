@@ -1,8 +1,9 @@
 import {Battle, Dex, PRNG} from '@pkmn/sim';
-import {bagItems, dailyLeague, draftTeam, rewardOffers, rewards, seedFor, speciesInfo} from './league.js';
+import {bagItems, dailyLeague, draftTeam, expandedElitePoolsFrom, rewardOffers, rewards, seedFor, speciesInfo} from './league.js';
 import {newRunStats, recordMove, reportRun, trackBattle} from './run-stats.js';
 
 const formatid = 'gen9customgame@@@!Team Preview,Terastal Clause';
+const battleFormat = day => day >= expandedElitePoolsFrom ? formatid + ',NatDex Mod' : formatid;
 const toxicImmunityFrom = '2026-11-27';
 const healing = new Set(['recover', 'roost', 'strengthsap', 'morningsun', 'slackoff']);
 const setup = new Set(['dragondance', 'swordsdance', 'calmmind', 'bulkup', 'quiverdance', 'nastyplot']);
@@ -279,7 +280,7 @@ export class LeagueRun {
   }
 
   initialParty() {
-    const battle = new Battle({formatid, seed: seedFor('party/' + this.day)});
+    const battle = new Battle({formatid: battleFormat(this.day), seed: seedFor('party/' + this.day)});
     battle.setPlayer('p1', {name: 'Challenger', team: structuredClone(this.team)});
     return battle.p1.pokemon.map(campParty);
   }
@@ -290,7 +291,7 @@ export class LeagueRun {
     const leadIndex = this.team.findIndex(set => speciesId(set) === leadId);
     const party = this.team.slice();
     party.unshift(...party.splice(leadIndex, 1));
-    const format = Dex.formats.get(formatid, true);
+    const format = Dex.formats.get(battleFormat(this.day), true);
     const battle = new Battle({
       format: {...format, onBattleStart() {
         this.p1.pokemonLeft = this.p1.pokemon.filter(pokemon => pokemon.hp > 0).length;

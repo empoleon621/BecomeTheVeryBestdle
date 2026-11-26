@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
-import {TeamValidator} from '@pkmn/sim';
-import {dailyLeague, dayKey, draftTeam, resetAt, rewardOffers, rewards} from '../src/league.js';
+import {Dex, TeamValidator} from '@pkmn/sim';
+import {dailyLeague, dayKey, draftTeam, expandedElitePoolsFrom, resetAt, rewardOffers, rewards} from '../src/league.js';
 import {LeagueRun} from '../src/battle.js';
+import {eliteMonotypeSets} from '../src/elite-monotype-sets.js';
 import {trainers} from '../src/trainer-rosters.js';
 
 test('challenge resets at 9 p.m. Pacific across midnight UTC and daylight saving time', () => {
@@ -35,13 +36,53 @@ test('independent runs of a challenge draw the same six complete sets', () => {
   assert.notDeepEqual(draftTeam('2026-11-27'), draft);
 });
 
+const nationalDex = new TeamValidator('gen9nationaldexag@@@Species Clause,Terastal Clause,-Tera Blast');
+
+test('the imported sets are National Dex legal at every Elite Four level', () => {
+  const olderSpecies = new Set();
+  const olderMoves = new Set();
+  for (const [type, sets] of Object.entries(eliteMonotypeSets)) {
+    assert.equal(new Set(sets.map(set => Dex.species.get(set.species).baseSpecies)).size, sets.length);
+    for (const set of sets) {
+      const species = Dex.species.get(set.species);
+      assert.ok(species.types.includes(type), set.species);
+      if (species.isNonstandard === 'Past') olderSpecies.add(species.id);
+      for (const move of set.moves) if (Dex.moves.get(move).isNonstandard === 'Past') olderMoves.add(move);
+      for (const level of [73, 75, 77, 79]) {
+        assert.equal(nationalDex.validateTeam([{...structuredClone(set), level}]), null, set.species + ' at level ' + level);
+      }
+    }
+  }
+  assert.ok(olderSpecies.has('aegislash'));
+  assert.ok(olderMoves.has('Fishious Rend'));
+});
+
+test('a National Dex opponent can use a move absent from Scarlet and Violet', () => {
+  const run = new LeagueRun('2026-12-21', {round: 2});
+  assert.ok(run.start(run.view().team[0].id));
+  const {battle} = run;
+  const slot = battle.p2.pokemon.findIndex(pokemon => pokemon.species.id === 'dracovish') + 1;
+  assert.ok(battle.choose('p1', 'switch 2'));
+  assert.ok(battle.choose('p2', 'switch ' + slot));
+  const move = battle.p2.active[0].moveSlots.findIndex(slot => slot.id === 'fishiousrend') + 1;
+  assert.ok(battle.choose('p1', 'switch 3'));
+  assert.ok(battle.choose('p2', 'move ' + move));
+  const log = run.view().log;
+  const used = log.findIndex(entry => entry.message === 'Dracovish used Fishious Rend!');
+  assert.ok(used > -1);
+  assert.equal(log[used + 1].event, '-damage');
+});
+
 test('daily rotation draws legal Elite Four subsets and full Champion teams', () => {
   const validator = new TeamValidator('gen9ubers');
   const checked = new Set();
   const trainerFrames = new Set();
   const lineups = new Set();
   const shortSizes = new Set();
-  const rosters = new Map(trainers.map(([name, , , team]) => [name, team.map(([species]) => species)]));
+  const rosters = new Map(trainers.map(([name, type, , team]) => [name, new Set([
+    ...team.map(([species]) => species), ...eliteMonotypeSets[type].map(set => set.species),
+  ])]));
+  const seen = new Map(trainers.map(([name]) => [name, new Set()]));
   for (let day = 1; day <= 62; day++) {
     const date = new Date(Date.UTC(2026, 10, day)).toISOString().slice(0, 10);
     const league = dailyLeague(date);
@@ -52,15 +93,21 @@ test('daily rotation draws legal Elite Four subsets and full Champion teams', ()
     lineups.add(league.map(trainer => trainer.name).join('/'));
     for (const [round, trainer] of league.entries()) {
       const size = trainer.team.length;
-      if (date >= '2026-11-27' && round < 4) {
+      if (date >= expandedElitePoolsFrom && round < 4) {
         assert.ok(size === 4 || size === 5, trainer.name);
         shortSizes.add(size);
-        const selected = trainer.team.map(set => set.species);
-        assert.deepEqual(selected, rosters.get(trainer.name).filter(species => selected.includes(species)));
+        for (const set of trainer.team) {
+          assert.ok(rosters.get(trainer.name).has(set.species), set.species);
+          assert.equal(set.level, [73,75,77,79][round]);
+          seen.get(trainer.name).add(Dex.species.get(set.species).baseSpecies);
+        }
+        assert.equal(new Set(trainer.team.map(set => Dex.species.get(set.species).baseSpecies)).size, size, trainer.name);
+        assert.equal(new Set(trainer.team.map(set => set.item)).size, size, trainer.name);
       } else assert.equal(size, 6, trainer.name);
-      if (checked.has(trainer.id)) continue;
       assert.equal(new Set(trainer.team.map(set => set.species)).size, size, trainer.name);
-      assert.equal(validator.validateTeam(trainer.team), null, trainer.name);
+      const legalFormat = date >= expandedElitePoolsFrom && round < 4 ? nationalDex : validator;
+      assert.equal(legalFormat.validateTeam(trainer.team), null, trainer.name);
+      if (checked.has(trainer.id)) continue;
       const heldItems = trainer.team.map(set => set.item);
       assert.equal(new Set(heldItems).size, heldItems.length, trainer.name);
       assert.ok(heldItems.filter(item => item === 'Sitrus Berry').length <= 1);
@@ -76,6 +123,7 @@ test('daily rotation draws legal Elite Four subsets and full Champion teams', ()
   assert.equal(trainerFrames.size, checked.size);
   assert.ok(lineups.size > 1);
   assert.deepEqual(shortSizes, new Set([4, 5]));
+  for (const [name, species] of seen) assert.ok(species.size > 6, name);
 });
 
 test('reload preserves the available choices, HP and the next turn outcome', () => {
