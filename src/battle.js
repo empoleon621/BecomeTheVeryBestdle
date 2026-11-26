@@ -455,6 +455,7 @@ export class LeagueRun {
       rewardOffers: phase === 'advance' ? rewardOffers(this.day, this.round) : [],
       records: outcome ? reportRun(this.stats, this.team, {
         outcome, turns: totalTurns,
+        opponentCount: this.league.reduce((sum, opponent) => sum + opponent.team.length, 0),
         defeated: this.league.slice(0, this.round).reduce((sum, opponent) => sum + opponent.team.length, 0) +
           this.battle.p2.pokemon.filter(pokemon => pokemon.fainted).length,
       }) : null,

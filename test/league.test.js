@@ -4,6 +4,7 @@ import test from 'node:test';
 import {TeamValidator} from '@pkmn/sim';
 import {dailyLeague, dayKey, draftTeam, resetAt, rewardOffers, rewards} from '../src/league.js';
 import {LeagueRun} from '../src/battle.js';
+import {trainers} from '../src/trainer-rosters.js';
 
 test('challenge resets at 9 p.m. Pacific across midnight UTC and daylight saving time', () => {
   for (const [day, instant] of [
@@ -34,11 +35,13 @@ test('independent runs of a challenge draw the same six complete sets', () => {
   assert.notDeepEqual(draftTeam('2026-11-27'), draft);
 });
 
-test('daily rotation draws four distinct specialists and a champion with legal six-Pokémon teams', () => {
+test('daily rotation draws legal Elite Four subsets and full Champion teams', () => {
   const validator = new TeamValidator('gen9ubers');
   const checked = new Set();
   const trainerFrames = new Set();
   const lineups = new Set();
+  const shortSizes = new Set();
+  const rosters = new Map(trainers.map(([name, , , team]) => [name, team.map(([species]) => species)]));
   for (let day = 1; day <= 62; day++) {
     const date = new Date(Date.UTC(2026, 10, day)).toISOString().slice(0, 10);
     const league = dailyLeague(date);
@@ -48,9 +51,15 @@ test('daily rotation draws four distinct specialists and a champion with legal s
     assert.equal(league[4].type, 'Champion');
     lineups.add(league.map(trainer => trainer.name).join('/'));
     for (const [round, trainer] of league.entries()) {
+      const size = trainer.team.length;
+      if (date >= '2026-11-27' && round < 4) {
+        assert.ok(size === 4 || size === 5, trainer.name);
+        shortSizes.add(size);
+        const selected = trainer.team.map(set => set.species);
+        assert.deepEqual(selected, rosters.get(trainer.name).filter(species => selected.includes(species)));
+      } else assert.equal(size, 6, trainer.name);
       if (checked.has(trainer.id)) continue;
-      assert.equal(trainer.team.length, 6, trainer.name);
-      assert.equal(new Set(trainer.team.map(set => set.species)).size, 6, trainer.name);
+      assert.equal(new Set(trainer.team.map(set => set.species)).size, size, trainer.name);
       assert.equal(validator.validateTeam(trainer.team), null, trainer.name);
       const heldItems = trainer.team.map(set => set.item);
       assert.equal(new Set(heldItems).size, heldItems.length, trainer.name);
@@ -59,13 +68,14 @@ test('daily rotation draws four distinct specialists and a champion with legal s
       trainerFrames.add(readFileSync(new URL('../src/graphics/overworld/' + trainer.id + '.png', import.meta.url)).toString('base64'));
       const run = new LeagueRun(date, {round});
       assert.ok(run.start(run.view().team[0].id), trainer.name);
-      assert.deepEqual(run.view().foes, Array(6).fill(false));
+      assert.deepEqual(run.view().foes, Array(size).fill(false));
       assert.ok(run.choose('move ' + (run.view().moves.findIndex(move => !move.disabled) + 1)), trainer.name);
     }
   }
   assert.equal(checked.size, 26);
   assert.equal(trainerFrames.size, checked.size);
   assert.ok(lineups.size > 1);
+  assert.deepEqual(shortSizes, new Set([4, 5]));
 });
 
 test('reload preserves the available choices, HP and the next turn outcome', () => {

@@ -29,23 +29,34 @@ export function seedFor(key) {
 }
 
 const stats = {hp: 85, atk: 85, def: 85, spa: 85, spd: 85, spe: 85};
+const shorterEliteTeamsFrom = '2026-11-27';
+
+function eliteRoster(day, name, roster) {
+  const rng = new PRNG(seedFor('elite-roster/' + day + '/' + name));
+  const size = 4 + rng.random(2);
+  const slots = roster.map((_, index) => index);
+  rng.shuffle(slots);
+  const selected = new Set(slots.slice(0, size));
+  return roster.filter((_, index) => selected.has(index));
+}
 
 export function dailyLeague(day) {
   const rng = new PRNG(seedFor('league/' + day));
   const eligible = trainers.slice();
   rng.shuffle(eligible);
   return [...eligible.slice(0, 4), champions[rng.random(champions.length)]]
-    .map(([name, type, mark, roster], round) => ({
-      id: name.toLowerCase(), name, type, mark,
-      team: roster.map(([species, ability, moves, item]) => {
-        return {
+    .map(([name, type, mark, roster], round) => {
+      const picks = round < 4 && day >= shorterEliteTeamsFrom ? eliteRoster(day, name, roster) : roster;
+      return {
+        id: name.toLowerCase(), name, type, mark,
+        team: picks.map(([species, ability, moves, item]) => ({
           species, ability, moves: moves.split(', '),
           item,
           level: [73, 75, 77, 79, 82][round],
           evs: {...stats}, nature: 'Serious',
-        };
-      }),
-    }));
+        })),
+      };
+    });
 }
 
 export function draftTeam(day) {

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import {Dex} from '@pkmn/sim';
 import {LeagueRun} from '../src/battle.js';
+import {dailyLeague, draftTeam} from '../src/league.js';
 import {openRecords, validateRun} from '../server/records.js';
 import {signTicket, validTicket} from '../server/security.js';
 
@@ -28,6 +30,19 @@ test('accepts a complete personal defeat report and rejects impossible or partia
   assert.equal(validateRun({...defeat, defeated: defeat.defeated - 1}), false);
   assert.equal(validateRun({...defeat, turns: undefined}), false);
   assert.equal(validateRun({...defeat, partial: true}), false);
+});
+
+test('a clear must beat exactly the Pokémon chosen for that challenge', () => {
+  const day = '2026-11-27';
+  const total = dailyLeague(day).reduce((sum, trainer) => sum + trainer.team.length, 0);
+  const report = {day, id: idFor(1), partial: false, outcome: 'win', turns: 40, defeated: total, enemies: [],
+    players: draftTeam(day).map(set => ({species: Dex.species.get(set.species).id, kos: 0, damage: 0, moves: {}})),
+  };
+  assert.ok(total >= 22 && total <= 26);
+  assert.ok(validateRun(report));
+  assert.ok(validateRun({...report, outcome: 'loss', defeated: total - 1}));
+  assert.equal(validateRun({...report, defeated: total - 1}), false);
+  assert.equal(validateRun({...report, defeated: 30}), false);
 });
 
 test('tickets only authorize their original guest, day and run', () => {

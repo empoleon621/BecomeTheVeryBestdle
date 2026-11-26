@@ -360,7 +360,7 @@ function runReport(records) {
     <h4>Everyone’s stats</h4>
     <div id="global-records" class="report-group" aria-live="polite">${globalReport(records)}</div>
     <h4>Your stats</h4>
-    <p>Pokémon defeated · <strong>${count(records.defeated)} of 30</strong></p>
+    <p>Pokémon defeated · <strong>${count(records.defeated)} of ${count(records.opponentCount)}</strong></p>
     ${records.partial ? '<p>This run started before tracking was added. Your report covers the battles tracked after the update.</p>' : ''}
     <div class="report-group">
       ${teamStats(rows, 'Pokémon KOs')}
@@ -783,7 +783,7 @@ async function doAction(action) {
       <li>Pick your lead before each battle. Use Fight to attack, Party to switch, or Bag to use an item. Items spend a turn during battle.</li>
       <li>After each Elite Four win, claim one of three randomly offered rewards. The pool includes +5 levels for one Pokémon, a full-HP revive, full HP for up to two living Pokémon, three Full Restores, or one Max Revive.</li>
       <li>Move PP refills between battles. Levels, HP, fainting, status, and held items carry over. A Max Revive brings a fainted Pokémon back at full HP.</li>
-      <li>Beat four Elite Four members and the Champion to finish the run. Your progress saves in this browser.</li>
+      <li>Beat four Elite Four members and the Champion. ${run.league[0].team.length < 6 ? 'Each Elite Four member brings four or five Pokémon, and the Champion brings six. ' : ''}Your progress saves in this browser.</li>
       <li>Complete one run per browser each daily challenge. Your run report and the global records appear when the run ends.</li>
     </ol>`);
   }
