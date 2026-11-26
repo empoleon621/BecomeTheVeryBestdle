@@ -35,13 +35,13 @@ test('both copies of a daily run have identical counters, including after a mid-
   ]);
 });
 
-test('fastest clear ranks wins across dates and counts ties once per guest', () => {
+test('fastest clears rank wins within the same challenge and count ties once per guest', () => {
   const loss = playDefeat(false);
   const store = openRecords(':memory:');
   const fastestClear = date => JSON.parse(JSON.stringify(store.totals(date))).fastestClear;
   try {
     assert.equal(store.add(idFor(1), {...loss, turns: 1}), true);
-    assert.deepEqual(fastestClear(day), {daily: null, allTime: null});
+    assert.equal(fastestClear(day), null);
 
     const win = {...loss, id: idFor(10), outcome: 'win', turns: 38, defeated: 30};
     assert.equal(validateRun(win), true);
@@ -50,17 +50,16 @@ test('fastest clear ranks wins across dates and counts ties once per guest', () 
     assert.equal(store.add(idFor(2), win), true);
     assert.equal(store.add(idFor(2), {...win, id: idFor(11), turns: 12}), false);
     assert.equal(store.add(idFor(3), {...win, id: idFor(12)}), true);
-    assert.deepEqual(fastestClear(day), {
-      daily: {turns: 38, clears: 2}, allTime: {turns: 38, clears: 2},
-    });
+    assert.deepEqual(fastestClear(day), {turns: 38, clears: 2});
 
     const tomorrow = '2026-11-27';
     assert.equal(store.add(idFor(2), {...win, id: idFor(13), day: tomorrow, turns: 31}), true);
     assert.equal(store.add(idFor(4), {...win, id: idFor(14), turns: undefined}), true);
-    assert.deepEqual(fastestClear(day), {
-      daily: {turns: 38, clears: 2}, allTime: {turns: 31, clears: 1},
-    });
-    assert.deepEqual(fastestClear(tomorrow).daily, {turns: 31, clears: 1});
+    assert.deepEqual(fastestClear(day), {turns: 38, clears: 2});
+    assert.deepEqual(fastestClear(tomorrow), {turns: 31, clears: 1});
+    assert.equal(store.add(idFor(4), {...win, id: idFor(14), turns: 36}), false);
+    assert.deepEqual(fastestClear(day), {turns: 36, clears: 1});
+    assert.equal(store.totals(day).runs, 4);
   } finally {
     store.close();
   }
@@ -102,12 +101,19 @@ test('shared counters count distinct guests once per date and reject mismatched 
     assert.equal(store.add(idFor(1), run), false);
     assert.equal(store.add(idFor(1), {...run, id: idFor(3)}), false);
     assert.equal(store.add(idFor(2), {...run, id: idFor(4)}), true);
-    const global = store.totals();
+    const tomorrow = '2026-11-27';
+    assert.equal(store.add(idFor(2), {...run, day: tomorrow, id: idFor(5)}), true);
+    const global = store.totals(day);
     assert.equal(global.runs, 2);
     assert.equal(global.players[0].species, 'slaking');
     assert.equal(global.players[0].kos, 8);
     assert.equal(global.players[0].damage, 1744);
     assert.equal(global.enemies[0].kos, 6);
+    const otherDay = store.totals(tomorrow);
+    assert.equal(otherDay.runs, 1);
+    assert.equal(otherDay.players[0].kos, 4);
+    assert.equal(otherDay.players[0].moves[0].clicks, 4);
+    assert.equal(otherDay.enemies[0].kos, 3);
   } finally {
     store.close();
   }

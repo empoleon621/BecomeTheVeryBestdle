@@ -2,6 +2,7 @@ import {createServer} from 'node:http';
 import {mkdir, readFile} from 'node:fs/promises';
 import {dirname, resolve} from 'node:path';
 import {isId, openRecords, validateRun} from './records.js';
+import {dayKey} from '../src/league.js';
 
 const host = process.env.HOST ?? (process.env.PORT ? '0.0.0.0' : '127.0.0.1');
 const port = Number(process.env.PORT ?? 4173);
@@ -37,7 +38,7 @@ createServer(async (request, response) => {
       if (!isId(guest) || !/^\d{4}-\d{2}-\d{2}$/.test(day ?? '')) return respond(response, 400, {error: 'Invalid guest or date.'});
       return respond(response, 200, {completed: records.completed(guest, day)});
     }
-    if (path === '/api/records' && request.method === 'GET') return respond(response, 200, records.totals(searchParams.get('day')));
+    if (path === '/api/records' && request.method === 'GET') return respond(response, 200, records.totals(searchParams.get('day') ?? dayKey()));
     if (path === '/api/records' && request.method === 'POST') {
       if (request.headers['content-type']?.split(';')[0] !== 'application/json') return respond(response, 415, {error: 'Expected JSON.'});
       let source = '';

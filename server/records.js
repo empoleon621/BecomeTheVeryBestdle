@@ -33,46 +33,53 @@ export function openRecords(filename) {
     PRAGMA journal_mode = WAL;
     PRAGMA busy_timeout = 3000;
     CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, guest TEXT NOT NULL, day TEXT NOT NULL, UNIQUE (guest, day));
-    CREATE TABLE IF NOT EXISTS players (species TEXT PRIMARY KEY, kos INTEGER NOT NULL, damage INTEGER NOT NULL);
-    CREATE TABLE IF NOT EXISTS moves (species TEXT NOT NULL, move TEXT NOT NULL, clicks INTEGER NOT NULL, PRIMARY KEY (species, move));
-    CREATE TABLE IF NOT EXISTS enemies (trainer TEXT NOT NULL, species TEXT NOT NULL, kos INTEGER NOT NULL, PRIMARY KEY (trainer, species));
+    CREATE TABLE IF NOT EXISTS daily_reports (run_id TEXT PRIMARY KEY REFERENCES runs(id), day TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS daily_reports_by_day ON daily_reports (day);
+    CREATE TABLE IF NOT EXISTS daily_players (day TEXT NOT NULL, species TEXT NOT NULL, kos INTEGER NOT NULL, damage INTEGER NOT NULL, PRIMARY KEY (day, species));
+    CREATE TABLE IF NOT EXISTS daily_moves (day TEXT NOT NULL, species TEXT NOT NULL, move TEXT NOT NULL, clicks INTEGER NOT NULL, PRIMARY KEY (day, species, move));
+    CREATE TABLE IF NOT EXISTS daily_enemies (day TEXT NOT NULL, trainer TEXT NOT NULL, species TEXT NOT NULL, kos INTEGER NOT NULL, PRIMARY KEY (day, trainer, species));
     CREATE TABLE IF NOT EXISTS clears (run_id TEXT PRIMARY KEY REFERENCES runs(id), day TEXT NOT NULL, turns INTEGER NOT NULL);
-    CREATE INDEX IF NOT EXISTS fastest_clear ON clears (turns);
     CREATE INDEX IF NOT EXISTS fastest_clear_by_day ON clears (day, turns);
     CREATE TABLE IF NOT EXISTS progress (run_id TEXT PRIMARY KEY REFERENCES runs(id), day TEXT NOT NULL, defeated INTEGER NOT NULL);
     CREATE INDEX IF NOT EXISTS progress_by_day ON progress (day, defeated);
   `);
   const addRun = db.prepare('INSERT INTO runs VALUES (?, ?, ?) ON CONFLICT DO NOTHING');
-  const addClear = db.prepare('INSERT INTO clears VALUES (?, ?, ?)');
-  const addProgress = db.prepare('INSERT INTO progress VALUES (?, ?, ?)');
-  const addPlayer = db.prepare(`INSERT INTO players VALUES (?, ?, ?) ON CONFLICT (species) DO UPDATE
+  const knownRun = db.prepare('SELECT 1 FROM runs WHERE id = ? AND guest = ? AND day = ?');
+  const addReport = db.prepare('INSERT INTO daily_reports VALUES (?, ?) ON CONFLICT DO NOTHING');
+  const addClear = db.prepare('INSERT INTO clears VALUES (?, ?, ?) ON CONFLICT DO NOTHING');
+  const addProgress = db.prepare('INSERT INTO progress VALUES (?, ?, ?) ON CONFLICT DO NOTHING');
+  const addPlayer = db.prepare(`INSERT INTO daily_players VALUES (?, ?, ?, ?) ON CONFLICT (day, species) DO UPDATE
     SET kos = kos + excluded.kos, damage = damage + excluded.damage`);
-  const addMove = db.prepare(`INSERT INTO moves VALUES (?, ?, ?) ON CONFLICT (species, move) DO UPDATE SET clicks = clicks + excluded.clicks`);
-  const addEnemy = db.prepare(`INSERT INTO enemies VALUES (?, ?, ?) ON CONFLICT (trainer, species) DO UPDATE SET kos = kos + excluded.kos`);
-  const runCount = db.prepare('SELECT COUNT(*) AS total FROM runs');
+  const addMove = db.prepare(`INSERT INTO daily_moves VALUES (?, ?, ?, ?) ON CONFLICT (day, species, move) DO UPDATE SET clicks = clicks + excluded.clicks`);
+  const addEnemy = db.prepare(`INSERT INTO daily_enemies VALUES (?, ?, ?, ?) ON CONFLICT (day, trainer, species) DO UPDATE SET kos = kos + excluded.kos`);
+  const runCount = db.prepare('SELECT COUNT(*) AS total FROM daily_reports WHERE day = ?');
   const completed = db.prepare('SELECT 1 FROM runs WHERE guest = ? AND day = ?');
-  const players = db.prepare('SELECT species, kos, damage FROM players ORDER BY kos DESC, damage DESC, species');
+  const players = db.prepare('SELECT species, kos, damage FROM daily_players WHERE day = ? ORDER BY kos DESC, damage DESC, species');
   const moves = db.prepare(`SELECT species, move, clicks FROM (
-    SELECT species, move, clicks, DENSE_RANK() OVER(PARTITION BY species ORDER BY clicks DESC) AS rank FROM moves
+    SELECT species, move, clicks, DENSE_RANK() OVER(PARTITION BY species ORDER BY clicks DESC) AS rank FROM daily_moves WHERE day = ?
   ) WHERE rank = 1 ORDER BY species, move`);
-  const enemies = db.prepare('SELECT trainer, species, kos FROM enemies WHERE kos > 0 ORDER BY kos DESC, trainer, species');
-  const fastest = db.prepare('SELECT turns, COUNT(*) AS clears FROM clears GROUP BY turns ORDER BY turns LIMIT 1');
-  const dailyFastest = db.prepare('SELECT turns, COUNT(*) AS clears FROM clears WHERE day = ? GROUP BY turns ORDER BY turns LIMIT 1');
-  const dailyProgress = db.prepare('SELECT defeated, COUNT(*) AS runs FROM progress WHERE day = ? GROUP BY defeated ORDER BY defeated');
+  const enemies = db.prepare('SELECT trainer, species, kos FROM daily_enemies WHERE day = ? AND kos > 0 ORDER BY kos DESC, trainer, species');
+  const dailyFastest = db.prepare(`SELECT turns, COUNT(*) AS clears FROM clears JOIN daily_reports USING (run_id)
+    WHERE clears.day = ? GROUP BY turns ORDER BY turns LIMIT 1`);
+  const dailyProgress = db.prepare(`SELECT defeated, COUNT(*) AS runs FROM progress JOIN daily_reports USING (run_id)
+    WHERE progress.day = ? GROUP BY defeated ORDER BY defeated`);
   const recordedProgress = db.prepare('SELECT 1 FROM progress JOIN runs ON runs.id = progress.run_id WHERE runs.id = ? AND guest = ?');
   return {
     add(guest, run) {
       db.exec('BEGIN IMMEDIATE');
       try {
         const accepted = addRun.run(run.id, guest, run.day).changes > 0;
-        if (accepted) {
+        // An existing result can fill in records that were added after it was submitted.
+        if (accepted || knownRun.get(run.id, guest, run.day)) {
           if (run.outcome === 'win' && run.turns !== undefined) addClear.run(run.id, run.day, run.turns);
           if (run.defeated !== undefined) addProgress.run(run.id, run.day, run.defeated);
-          for (const row of run.players) {
-            addPlayer.run(row.species, row.kos, row.damage);
-            for (const [move, clicks] of Object.entries(row.moves)) addMove.run(row.species, move, clicks);
+          if (addReport.run(run.id, run.day).changes) {
+            for (const row of run.players) {
+              addPlayer.run(run.day, row.species, row.kos, row.damage);
+              for (const [move, clicks] of Object.entries(row.moves)) addMove.run(run.day, row.species, move, clicks);
+            }
+            for (const row of run.enemies) addEnemy.run(run.day, row.trainer, row.species, row.kos);
           }
-          for (const row of run.enemies) addEnemy.run(row.trainer, row.species, row.kos);
         }
         db.exec('COMMIT');
         return accepted;
@@ -83,16 +90,16 @@ export function openRecords(filename) {
     },
     totals(day) {
       const favorites = new Map();
-      for (const row of moves.all()) {
+      for (const row of moves.all(day)) {
         if (!favorites.has(row.species)) favorites.set(row.species, []);
         favorites.get(row.species).push(row);
       }
       return {
-        runs: runCount.get().total,
-        players: players.all().map(row => ({...row, moves: favorites.get(row.species) ?? []})),
-        enemies: enemies.all(),
-        fastestClear: {daily: day ? dailyFastest.get(day) ?? null : null, allTime: fastest.get() ?? null},
-        dailyProgress: day ? dailyProgress.all(day) : [],
+        runs: runCount.get(day).total,
+        players: players.all(day).map(row => ({...row, moves: favorites.get(row.species) ?? []})),
+        enemies: enemies.all(day),
+        fastestClear: dailyFastest.get(day) ?? null,
+        dailyProgress: dailyProgress.all(day),
       };
     },
     completed(guest, day) { return Boolean(completed.get(guest, day)); },

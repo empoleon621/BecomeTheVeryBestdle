@@ -292,19 +292,18 @@ const numberFormat = new Intl.NumberFormat();
 const count = value => numberFormat.format(value);
 
 function mostClicked(moves) {
-  return moves.length ? moves.map(({move}) => escape(Dex.moves.get(move).name)).join(', ') +
-    ' ×' + count(moves[0].clicks) : 'No move clicked';
+  return moves.length ? moves.map(({move, clicks}) => `${escape(Dex.moves.get(move).name)} ×${count(clicks)}`).join(', ') : 'No move clicked';
 }
 
 function reportDropdown(title, contents) {
   return `<details class="report-dropdown"><summary>${title}</summary><div class="report-dropdown-body">${contents}</div></details>`;
 }
 
-function teamStats(rows, {koTitle, koLeader = ''}) {
+function teamStats(rows, koTitle) {
   const list = (value, sortedBy) => `<ul class="report-rows">${(sortedBy ?
     [...rows].sort((a, b) => b[sortedBy] - a[sortedBy]) : rows).map(row => `<li>
     <span>${escape(speciesName(row.species))}</span><strong>${value(row)}</strong></li>`).join('')}</ul>`;
-  return reportDropdown(koTitle, koLeader + list(row => `${count(row.kos)} KO${row.kos === 1 ? '' : 's'}`, 'kos')) +
+  return reportDropdown(koTitle, list(row => `${count(row.kos)} KO${row.kos === 1 ? '' : 's'}`, 'kos')) +
     reportDropdown('Damage dealt', list(row => `${count(row.damage)} HP`, 'damage')) +
     reportDropdown('Most-clicked moves', list(row => mostClicked(row.moves)));
 }
@@ -339,13 +338,10 @@ function globalReport(records) {
   const team = records.players.map(({species}) => rows.get(species) ?? {species, kos: 0, damage: 0, moves: []});
   const clear = record => record ? `<strong>${count(record.turns)} turns</strong>${record.clears > 1 ? ` · ${count(record.clears)} runs tied` : ''}`
     : 'No recorded clear yet';
-  const koLeader = players[0]?.kos ? `<p><strong>${escape(speciesName(players[0].species))}</strong> leads overall with ${count(players[0].kos)} KOs.</p>` : '';
-  return `<p>${count(runs)} finished ${runs === 1 ? 'run' : 'runs'} in total.</p>
-    ${teamStats(team, {koTitle: 'Pokémon KO leaderboard',
-      koLeader: koLeader + '<p>KO totals for your six Pokémon across everyone’s runs.</p>'})}
+  return `<p>${count(runs)} ${runs === 1 ? 'player finished' : 'players finished'} this challenge.</p>
+    ${teamStats(team, 'Pokémon KO leaderboard')}
     ${reportDropdown('Deadliest opponents', enemyRecords(enemies.slice(0, 5)))}
-    ${reportDropdown('Fastest clear', `<p>This challenge · ${clear(fastestClear?.daily)}</p>
-      <p>All time · ${clear(fastestClear?.allTime)}</p>`)}`;
+    ${reportDropdown('Fastest clear', `<p>${clear(fastestClear)}</p>`)}`;
 }
 
 function runReport(records) {
@@ -361,7 +357,7 @@ function runReport(records) {
     <p>Pokémon defeated · <strong>${count(records.defeated)} of 30</strong></p>
     ${records.partial ? '<p>This run started before tracking was added. Your report covers the battles tracked after the update.</p>' : ''}
     <div class="report-group">
-      ${teamStats(rows, {koTitle: 'Pokémon KOs'})}
+      ${teamStats(rows, 'Pokémon KOs')}
       ${reportDropdown('Opponents that scored KOs', enemyRecords(records.enemies))}
     </div>
   </section>`;
