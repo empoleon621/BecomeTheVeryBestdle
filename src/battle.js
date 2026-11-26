@@ -3,6 +3,7 @@ import {bagItems, dailyLeague, draftTeam, rewardOffers, rewards, seedFor, specie
 import {newRunStats, recordMove, reportRun, trackBattle} from './run-stats.js';
 
 const formatid = 'gen9customgame@@@!Team Preview,Terastal Clause';
+const toxicImmunityFrom = '2026-11-27';
 const healing = new Set(['recover', 'roost', 'strengthsap', 'morningsun', 'slackoff']);
 const setup = new Set(['dragondance', 'swordsdance', 'calmmind', 'bulkup', 'quiverdance', 'nastyplot']);
 const hazards = {spikes: 3, toxicspikes: 2, stealthrock: 1, stickyweb: 1};
@@ -37,7 +38,7 @@ function damageValue(move, user, target, battle) {
   return power * stab * (2 ** effectiveness) * (attack / defense) * accuracy * priority * weatherFactor * burn;
 }
 
-function cpuChoice(battle, seed) {
+function cpuChoice(battle, seed, day) {
   const {p1, p2} = battle;
   const request = p2.activeRequest;
   const user = p2.active[0];
@@ -57,8 +58,11 @@ function cpuChoice(battle, seed) {
   }
   const available = request.active?.[0]?.moves ?? [];
   return available.map((option, index) => {
-    if (option.disabled) return {score: -1};
+    if (option.disabled) return {score: -Infinity};
     const move = battle.dex.moves.get(option.id);
+    const canPoison = day >= toxicImmunityFrom && move.id === 'toxic'
+      ? user.hasAbility('corrosion') || battle.dex.getImmunity('psn', target)
+      : undefined;
     let score = 2;
     if (move.category !== 'Status') {
       score = damageValue(move, user, target, battle);
@@ -69,10 +73,12 @@ function cpuChoice(battle, seed) {
     } else if (hazards[move.id] && p1.pokemonLeft >= 3 &&
         (p1.sideConditions[move.id]?.layers ?? (p1.sideConditions[move.id] ? 1 : 0)) < hazards[move.id]) {
       score = 59;
-    } else if (inflictions.has(move.id) && !target.status && !target.volatiles.yawn && Dex.getImmunity(move.type, target.getTypes())) {
+    } else if (inflictions.has(move.id) && !target.status && !target.volatiles.yawn &&
+        (canPoison ?? Dex.getImmunity(move.type, target.getTypes()))) {
       score = 65;
     }
-    return {command: 'move ' + (index + 1), score: score + rng.random(15)};
+    const rankedScore = score + rng.random(15);
+    return {command: 'move ' + (index + 1), score: canPoison === false ? -1 : rankedScore};
   }).sort((a, b) => b.score - a.score)[0]?.command ?? 'default';
 }
 
@@ -366,7 +372,7 @@ export class LeagueRun {
     while (!battle.ended && battle.p1.isChoiceDone() && battle.p2.activeRequest &&
         !battle.p2.activeRequest.wait && !battle.p2.isChoiceDone()) {
       const seed = seedFor('cpu/' + this.day + '/' + this.round + '/' + battle.turn + '/' + attempts++);
-      const command = firstChoice ?? cpuChoice(battle, seed);
+      const command = firstChoice ?? cpuChoice(battle, seed, this.day);
       firstChoice = null;
       if (!battle.choose('p2', command) && !battle.choose('p2', 'default')) {
         throw new Error('The opponent could not select a legal action.');
@@ -405,7 +411,7 @@ export class LeagueRun {
     if (!pokemon) return message;
 
     const {battle} = this;
-    const cpu = cpuChoice(battle, seedFor('cpu/' + this.day + '/' + this.round + '/' + battle.turn + '/0'));
+    const cpu = cpuChoice(battle, seedFor('cpu/' + this.day + '/' + this.round + '/' + battle.turn + '/0'), this.day);
     battle.add('bag', 'You used ' + bagItems[item].name + '!');
     battle.add('bag', message);
     if (item !== 'fullrestore') {

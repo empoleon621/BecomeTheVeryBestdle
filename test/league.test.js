@@ -73,6 +73,28 @@ test('reload preserves the available choices, HP and the next turn outcome', () 
   assert.deepEqual(restored.view(), run.view());
 });
 
+test('Umbreon stops wasting Toxic on Hisuian Qwilfish starting with the November 27 challenge', () => {
+  const run = new LeagueRun('2026-11-26', {round: 2});
+  assert.ok(run.start('qwilfishhisui'));
+  const initial = JSON.parse(JSON.stringify(run.snapshot()));
+  const spikes = 'move ' + (run.view().moves.findIndex(move => move.id === 'spikes') + 1);
+  assert.ok(run.choose(spikes));
+  assert.ok(run.view().log.some(entry => entry.message === 'Umbreon used Toxic!'));
+  assert.ok(run.view().log.some(entry => entry.message === 'It had no effect on Qwilfish.'));
+
+  const nextChallenge = new LeagueRun('2026-11-27', initial);
+  assert.ok(nextChallenge.choose(spikes));
+  const used = nextChallenge.view().log.filter(entry => entry.message?.startsWith('Umbreon used'));
+  assert.deepEqual(used.map(entry => entry.message), ['Umbreon used Foul Play!']);
+
+  const corrosion = new LeagueRun('2026-11-27', initial);
+  corrosion.battle.p1.active[0].setType(['Steel', 'Dark']);
+  corrosion.battle.p2.active[0].setAbility('corrosion');
+  assert.ok(corrosion.choose(spikes));
+  assert.ok(corrosion.view().log.some(entry => entry.message === 'Umbreon used Toxic!'));
+  assert.equal(corrosion.view().player.status, 'tox');
+});
+
 function winOpeningBattle() {
   const day = '2026-11-26';
   const run = new LeagueRun(day);
