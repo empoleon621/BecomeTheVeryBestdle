@@ -33,6 +33,8 @@ export function openRecords(filename) {
     PRAGMA journal_mode = WAL;
     PRAGMA busy_timeout = 3000;
     CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, guest TEXT NOT NULL, day TEXT NOT NULL, UNIQUE (guest, day));
+    CREATE TABLE IF NOT EXISTS attempts (guest TEXT NOT NULL, day TEXT NOT NULL, run_id TEXT NOT NULL, PRIMARY KEY (guest, day));
+    CREATE TABLE IF NOT EXISTS bug_reports (id INTEGER PRIMARY KEY, submitted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, message TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS daily_reports (run_id TEXT PRIMARY KEY REFERENCES runs(id), day TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS daily_reports_by_day ON daily_reports (day);
     CREATE TABLE IF NOT EXISTS daily_players (day TEXT NOT NULL, species TEXT NOT NULL, kos INTEGER NOT NULL, damage INTEGER NOT NULL, PRIMARY KEY (day, species));
@@ -54,6 +56,9 @@ export function openRecords(filename) {
   const addEnemy = db.prepare(`INSERT INTO daily_enemies VALUES (?, ?, ?, ?) ON CONFLICT (day, trainer, species) DO UPDATE SET kos = kos + excluded.kos`);
   const runCount = db.prepare('SELECT COUNT(*) AS total FROM daily_reports WHERE day = ?');
   const completed = db.prepare('SELECT 1 FROM runs WHERE guest = ? AND day = ?');
+  const register = db.prepare('INSERT INTO attempts VALUES (?, ?, ?) ON CONFLICT DO NOTHING');
+  const attempt = db.prepare('SELECT run_id FROM attempts WHERE guest = ? AND day = ?');
+  const saveBug = db.prepare('INSERT INTO bug_reports (message) VALUES (?)');
   const players = db.prepare('SELECT species, kos, damage FROM daily_players WHERE day = ? ORDER BY kos DESC, damage DESC, species');
   const moves = db.prepare(`SELECT species, move, clicks FROM (
     SELECT species, move, clicks, DENSE_RANK() OVER(PARTITION BY species ORDER BY clicks DESC) AS rank FROM daily_moves WHERE day = ?
@@ -103,6 +108,11 @@ export function openRecords(filename) {
       };
     },
     completed(guest, day) { return Boolean(completed.get(guest, day)); },
+    start(guest, day, id) {
+      register.run(guest, day, id);
+      return attempt.get(guest, day)?.run_id === id;
+    },
+    saveBug(message) { saveBug.run(message); },
     hasProgress(id, guest) { return Boolean(recordedProgress.get(id, guest)); },
     close() { db.close(); },
   };

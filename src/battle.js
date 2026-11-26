@@ -267,6 +267,7 @@ export class LeagueRun {
     this.bag = Object.fromEntries(Object.keys(bagItems).map(id => [id, saved?.bag?.[id] ?? 0]));
     this.battle = saved?.battle ? Battle.fromJSON(saved.battle) : null;
     this.camp = saved?.camp ? refillPartyPP(structuredClone(saved.camp)) : this.battle ? null : this.initialParty();
+    this.actions = Array.isArray(saved?.actions) ? structuredClone(saved.actions) : this.battle || this.round ? null : [];
     this.stats = newRunStats(saved?.stats, Boolean(this.round || this.battle?.ended || this.battle?.turn > 1));
     if (this.battle) trackBattle(this.battle, this.stats, this.league[this.round].id);
     this.error = '';
@@ -307,6 +308,7 @@ export class LeagueRun {
     this.battle = battle;
     this.camp = null;
     this.error = '';
+    this.actions?.push(['start', leadId]);
     return true;
   }
 
@@ -357,6 +359,7 @@ export class LeagueRun {
     this.round++;
     this.battle = null;
     this.error = '';
+    this.actions?.push(['advance', reward ?? null, [...targets]]);
     return true;
   }
 
@@ -386,6 +389,7 @@ export class LeagueRun {
     }
     if (move) recordMove(this.stats, pokemon, move.id);
     this.finishTurn();
+    this.actions?.push(['choose', command]);
     return true;
   }
 
@@ -402,6 +406,7 @@ export class LeagueRun {
     this.error = '';
     const message = useMedicine(item, member);
     this.bag[item]--;
+    this.actions?.push(['item', item, id]);
     if (!pokemon) return message;
 
     const {battle} = this;
@@ -436,6 +441,7 @@ export class LeagueRun {
       round: this.round, roundTurns: [...this.roundTurns], bag: {...this.bag},
       camp: this.camp && structuredClone(this.camp), battle: this.battle?.toJSON() ?? null,
       stats: structuredClone(this.stats),
+      actions: this.actions && structuredClone(this.actions),
     };
   }
 

@@ -2,11 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {LeagueRun} from '../src/battle.js';
 import {openRecords, validateRun} from '../server/records.js';
+import {replayRun} from '../server/replay.js';
+import {signTicket, validTicket} from '../server/security.js';
 
 const day = '2026-11-26';
 const idFor = n => n.toString(16).padStart(32, '0');
 
-function playDefeat(reload) {
+function playDefeat(reload, includeHistory = false) {
   let run = new LeagueRun(day);
   assert.ok(run.start('reshiram'));
   for (let turns = 0; turns < 40 && run.phase === 'battle'; turns++) {
@@ -18,8 +20,28 @@ function playDefeat(reload) {
     if (reload && turns === 10) run = new LeagueRun(day, JSON.parse(JSON.stringify(run.snapshot())));
   }
   assert.equal(run.phase, 'defeat');
-  return {day, ...run.view().records};
+  return {day, ...run.view().records, ...(includeHistory && {actions: run.actions})};
 }
+
+test('replay verifies a completed run across a reload and ignores unfinished runs', () => {
+  const {day, id, actions, ...expected} = playDefeat(true, true);
+  const verified = replayRun(day, actions);
+  assert.ok(verified);
+  assert.deepEqual({...verified, id}, {...expected, id});
+  assert.equal(replayRun(day, actions.slice(0, -1)), null);
+  assert.equal(replayRun(day, [...actions, ['start', 'reshiram']]), null);
+});
+
+test('tickets only authorize their original guest, day and run', () => {
+  const key = Buffer.alloc(32, 1);
+  const guest = idFor(1);
+  const run = idFor(2);
+  const ticket = signTicket(key, guest, day, run);
+  assert.equal(validTicket(key, ticket, guest, day, run), true);
+  assert.equal(validTicket(key, ticket, idFor(3), day, run), false);
+  assert.equal(validTicket(key, ticket, guest, '2026-11-27', run), false);
+  assert.equal(validTicket(key, ticket, guest, day, idFor(3)), false);
+});
 
 test('both copies of a daily run have identical counters, including after a mid-battle reload', () => {
   const {id: first, ...one} = playDefeat(false);

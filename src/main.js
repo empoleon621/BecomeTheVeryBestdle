@@ -35,10 +35,12 @@ const date = new Intl.DateTimeFormat('en-US', {timeZone:'UTC', month:'short', da
 const rest = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 let run;
+let runTicket;
 try {
   const saved = JSON.parse(localStorage.getItem(storageKey));
   run = new LeagueRun(day, saved?.day === day ? saved : null);
   run.view();
+  runTicket = saved?.day === day ? saved.ticket : undefined;
 } catch {
   run = new LeagueRun(day);
 }
@@ -59,7 +61,7 @@ let travelTimer;
 function save() {
   if (dayKey() !== day) return;
   try {
-    localStorage.setItem(storageKey, JSON.stringify({day, ...run.snapshot()}));
+    localStorage.setItem(storageKey, JSON.stringify({day, ...run.snapshot(), ticket: runTicket}));
   } catch {
     // A browser can disallow local storage for local files.
   }
@@ -356,6 +358,7 @@ function runReport(records) {
     <h4>Your stats</h4>
     <p>Pokémon defeated · <strong>${count(records.defeated)} of 30</strong></p>
     ${records.partial ? '<p>This run started before tracking was added. Your report covers the battles tracked after the update.</p>' : ''}
+    ${!runTicket || !run.actions ? '<p>Start a run while connected to include it in the shared standings.</p>' : ''}
     <div class="report-group">
       ${teamStats(rows, 'Pokémon KOs')}
       ${reportDropdown('Opponents that scored KOs', enemyRecords(records.enemies))}
@@ -367,9 +370,9 @@ async function syncGlobalRecords(records) {
   if (location.protocol === 'file:' || sharedRecords?.id === records.id) return;
   const pending = sharedRecords = {id: records.id};
   try {
-    const response = await fetch(recordsOrigin + '/api/records?day=' + day, records.partial ? undefined : {
+    const response = await fetch(recordsOrigin + '/api/records?day=' + day, records.partial || !runTicket || !run.actions ? undefined : {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({guest: guestId(), run: {...records, day}}),
+      body: JSON.stringify({guest: guestId(), day, id: records.id, ticket: runTicket, actions: run.actions}),
     });
     if (!response.ok) throw new Error('Global records are unavailable.');
     pending.data = await response.json();
@@ -391,15 +394,20 @@ function guestId() {
   return guest;
 }
 
-async function alreadyPlayedToday() {
-  if (location.protocol === 'file:') return false;
+async function reserveRun() {
+  if (location.protocol === 'file:' || runTicket) return '';
   try {
-    const response = await fetch(recordsOrigin + '/api/guest?day=' + day, {
-      headers: {'X-Bestdle-Guest': guestId()}, signal: AbortSignal.timeout(3000),
+    const response = await fetch(recordsOrigin + '/api/start', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, signal: AbortSignal.timeout(8000),
+      body: JSON.stringify({guest: guestId(), day, id: run.stats.id}),
     });
-    return response.ok && (await response.json()).completed === true;
+    if (response.status === 404) return '';
+    const result = await response.json();
+    if (!response.ok) return result.error || 'Please try again shortly.';
+    runTicket = result.ticket;
+    return '';
   } catch {
-    return false;
+    return '';
   }
 }
 
@@ -432,8 +440,8 @@ function render(keepSprites = false) {
       ${view.phase === 'camp' ? camp(view) : battle(view)}
       ${record(view)}
     </main>
-    <footer class="frame footer"><span>Unofficial Pokémon fan game</span><span><a href="https://play.pokemonshowdown.com/credits">Battle art</a> · <a href="https://github.com/smogon/sprites">Sprites</a> · <a href="https://eeveeexpo.com/resources/1544/">Paldea sprites</a> · <a href="https://github.com/Ghasty001/Animated_sprites_by_Ghasty001">Ghasty001</a></span>
-      <span>Overworld tiles by <a href="https://eeveeexpo.com/resources/15/#:~:text=Gen%205%20interior%20tileset">Akizakura16, Shiney570, and UltimoSpriter</a></span></footer>`;
+    <footer class="frame footer"><span>Unofficial Pokémon fan game · <a href="https://www.linkedin.com/in/aiden-solomon621/">Aiden Solomon</a></span>
+      <span class="footer-actions"><button class="quiet" data-action="credits">Credits</button><button class="quiet" data-action="bug-report">Report a bug</button></span></footer>`;
   for (const side of app.querySelectorAll('[data-combat]')) {
     const sprite = retained.get(side.dataset.combat);
     if (sprite) side.querySelector('.fight-art').replaceWith(sprite);
@@ -735,14 +743,33 @@ async function doAction(action) {
     </ol>`);
   }
   if (action === 'bag') openBag();
+  if (action === 'credits') {
+    dialog('Credits', `<ul class="rules">
+      <li><a href="https://play.pokemonshowdown.com/credits">Pokémon Showdown</a> for the battle engine and item sprites, and Kyle Dove for the battle backdrop.</li>
+      <li><a href="https://github.com/smogon/sprites">Smogon Sprite Project</a>, Lucidious89’s <a href="https://eeveeexpo.com/resources/1544/">Animated Pokémon System</a>, <a href="https://eeveeexpo.com/resources/1831/">Sprites Animados</a>, and <a href="https://github.com/Ghasty001/Animated_sprites_by_Ghasty001">Ghasty001</a> for Pokémon sprites.</li>
+      <li><a href="https://eeveeexpo.com/resources/15/#:~:text=Gen%205%20interior%20tileset">Akizakura16, Shiney570, and UltimoSpriter</a> for overworld tiles.</li>
+      <li>Kaori, Naokohiro, Draboon, and <a href="https://eeveeexpo.com/resources/609/">PurpleZaffre</a> for overworld sprite resources. Xysmaniac, pret, huderlem, and grunt-lucas for <a href="https://eeveeexpo.com/resources/1689/">Emerald Essentials</a> resources.</li>
+      <li>Lemon, Jackster, GameMaster12, and StayPuft for HGSS interface resources. Pixel-Boy and AAA’s <a href="https://pixel-boy.itch.io/ninja-adventure-asset-pack">Ninja Adventure</a> for the move frames.</li>
+      <li><a href="https://www.smogon.com/dex/sv/pokemon/">Smogon Strategy Dex</a> for moveset references.</li>
+    </ul>`);
+  }
+  if (action === 'bug-report') {
+    dialog('Report a bug', location.protocol === 'file:' ? '<p>Open the game online to send a report.</p>' :
+      `<form id="bug-report-form">
+        <label for="bug-description">What happened?</label>
+        <textarea id="bug-description" required maxlength="1500" rows="5"></textarea>
+        <div class="submenu-foot"><p role="status" id="bug-status"></p><button class="primary" type="submit">Send report</button></div>
+      </form>`);
+  }
   if (action === 'bag-back') backFromBag();
   if (action === 'skip') endWalk();
   if (action === 'start' && !walking) {
     if (run.round === 0) {
+      save();
       busy = true;
-      const completed = await alreadyPlayedToday();
+      const error = await reserveRun();
       busy = false;
-      if (completed) return dialog('Today’s run is complete', '<p>This browser has already finished today’s run. A new run opens at midnight UTC.</p>');
+      if (error) return dialog('Today’s challenge', `<p>${escape(error)}</p>`);
     }
     if (!run.start(selected)) return;
     flash = '';
@@ -813,6 +840,36 @@ details.addEventListener('click', event => {
   if (!button) return;
   if (button.dataset.action === 'bag-back') backFromBag();
   else chooseBagOption(button.dataset);
+});
+
+details.addEventListener('submit', async event => {
+  if (event.target.id !== 'bug-report-form') return;
+  event.preventDefault();
+  const form = event.target;
+  const button = form.querySelector('button[type="submit"]');
+  const status = form.querySelector('#bug-status');
+  if (button.disabled) return;
+  const description = form.querySelector('textarea');
+  const message = description.value.trim();
+  if (!message) {
+    status.textContent = 'Describe what happened before sending.';
+    return;
+  }
+  button.disabled = true;
+  status.textContent = 'Sending…';
+  try {
+    const response = await fetch(recordsOrigin + '/api/bugs', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({message}),
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!response.ok) throw new Error();
+    description.value = '';
+    status.textContent = 'Report sent.';
+  } catch {
+    status.textContent = 'Could not send your report. Try again shortly.';
+  } finally {
+    button.disabled = false;
+  }
 });
 
 app.addEventListener('toggle', event => {

@@ -9,6 +9,7 @@
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
     "start": "node server/index.js",
+    "bug-reports": "node server/bug-reports.js",
     "test": "node --test"
   },
   "dependencies": {

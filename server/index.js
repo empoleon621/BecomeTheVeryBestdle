@@ -2,6 +2,8 @@ import {createServer} from 'node:http';
 import {mkdir, readFile} from 'node:fs/promises';
 import {dirname, resolve} from 'node:path';
 import {isId, openRecords, validateRun} from './records.js';
+import {validActions} from './replay.js';
+import {limitRequests, loadTicketKey, readJson, replayInWorker, signTicket, validTicket} from './security.js';
 import {dayKey} from '../src/league.js';
 
 const host = process.env.HOST ?? (process.env.PORT ? '0.0.0.0' : '127.0.0.1');
@@ -9,52 +11,82 @@ const port = Number(process.env.PORT ?? 4173);
 const database = process.env.RECORDS_DB ? resolve(process.env.RECORDS_DB)
   : resolve(process.env.RAILWAY_VOLUME_MOUNT_PATH ?? 'data', 'records.sqlite');
 const html = await readFile(new URL('../dist/index.html', import.meta.url));
+process.umask(0o077);
 await mkdir(dirname(database), {recursive: true});
+const ticketKey = await loadTicketKey(database + '.ticket-key');
 const records = openRecords(database);
-const cookie = 'bestdle_guest';
+const allowRequest = limitRequests();
 const pagesOrigin = process.env.PAGES_ORIGIN;
+let replaying = false;
 
-function respond(response, status, value, headers = {}) {
-  response.writeHead(status, {'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers});
+function respond(response, status, value) {
+  response.writeHead(status, {'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store'});
   response.end(JSON.stringify(value));
 }
 
-createServer(async (request, response) => {
+createServer({requestTimeout: 10000, headersTimeout: 5000, maxHeaderSize: 8192}, async (request, response) => {
+  response.setHeader('X-Content-Type-Options', 'nosniff');
+  response.setHeader('Referrer-Policy', 'no-referrer');
+  response.setHeader('X-Frame-Options', 'DENY');
   try {
     const {pathname: path, searchParams} = new URL(request.url, 'http://localhost');
-    if (path.startsWith('/api/') && pagesOrigin && request.headers.origin === pagesOrigin) {
-      response.setHeader('Access-Control-Allow-Origin', pagesOrigin);
-      response.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Bestdle-Guest');
+    const origin = request.headers.origin;
+    if (path.startsWith('/api/') && origin) {
+      if (![pagesOrigin, 'http://' + request.headers.host, 'https://' + request.headers.host].includes(origin)) {
+        return respond(response, 403, {error: 'Origin is not allowed.'});
+      }
+      response.setHeader('Vary', 'Origin');
+      response.setHeader('Access-Control-Allow-Origin', origin);
+      response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
       response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
       if (request.method === 'OPTIONS') {
         response.writeHead(204);
         return response.end();
       }
     }
-    const savedGuest = request.headers.cookie?.match(/(?:^|;\s*)bestdle_guest=([a-f0-9]{32})(?:;|$)/)?.[1];
-    if (path === '/api/guest' && request.method === 'GET') {
-      const day = searchParams.get('day');
-      const guest = savedGuest ?? request.headers['x-bestdle-guest'];
-      if (!isId(guest) || !/^\d{4}-\d{2}-\d{2}$/.test(day ?? '')) return respond(response, 400, {error: 'Invalid guest or date.'});
-      return respond(response, 200, {completed: records.completed(guest, day)});
+    if (path === '/api/records' && request.method === 'GET') {
+      if (!allowRequest(request, 'read', 120)) return respond(response, 429, {error: 'Try again shortly.'});
+      const day = searchParams.get('day') ?? dayKey();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return respond(response, 400, {error: 'Invalid date.'});
+      return respond(response, 200, records.totals(day));
     }
-    if (path === '/api/records' && request.method === 'GET') return respond(response, 200, records.totals(searchParams.get('day') ?? dayKey()));
-    if (path === '/api/records' && request.method === 'POST') {
-      if (request.headers['content-type']?.split(';')[0] !== 'application/json') return respond(response, 415, {error: 'Expected JSON.'});
-      let source = '';
-      for await (const chunk of request) {
-        source += chunk;
-        if (source.length > 32768) return respond(response, 413, {error: 'Run record is too large.'});
+    if (request.method === 'POST' && ['/api/start', '/api/records', '/api/bugs'].includes(path)) {
+      const cap = path === '/api/bugs' ? 4 : path === '/api/start' ? 24 : 12;
+      if (!allowRequest(request, path, cap)) return respond(response, 429, {error: 'Try again shortly.'});
+      const {body, status} = await readJson(request, path === '/api/records' ? 65536 : 8192);
+      if (status) return respond(response, status, {error: 'Invalid JSON request.'});
+      if (path === '/api/bugs') {
+        const message = typeof body?.message === 'string' && body.message.trim();
+        if (!message || message.length > 1500 || /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(message)) {
+          return respond(response, 400, {error: 'Enter a report of up to 1,500 characters.'});
+        }
+        records.saveBug(message);
+        return respond(response, 201, {received: true});
       }
-      let body;
-      try { body = JSON.parse(source); } catch { return respond(response, 400, {error: 'Invalid JSON.'}); }
-      const guest = savedGuest ?? body?.guest;
-      if (!isId(guest) || !validateRun(body?.run)) return respond(response, 400, {error: 'Invalid run record.'});
-      const accepted = records.add(guest, body.run);
-      const secure = request.socket.encrypted || request.headers['x-forwarded-proto'] === 'https' ? '; Secure' : '';
-      return respond(response, 200, {accepted, progressRecorded: records.hasProgress(body.run.id, guest), ...records.totals(body.run.day)}, {
-        'Set-Cookie': `${cookie}=${guest}; Path=/api; Max-Age=31536000; HttpOnly; SameSite=Lax${secure}`,
-      });
+      const {guest, day, id, ticket, actions} = body ?? {};
+      if (!isId(guest) || !isId(id)) return respond(response, 400, {error: 'Invalid run.'});
+      if (path === '/api/start') {
+        if (day !== dayKey()) return respond(response, 409, {error: 'Today’s challenge has changed. Refresh to continue.'});
+        if (records.completed(guest, day) || !records.start(guest, day, id)) {
+          return respond(response, 409, {error: 'This browser already has a run for this challenge.'});
+        }
+        return respond(response, 200, {ticket: signTicket(ticketKey, guest, day, id)});
+      }
+      const yesterday = dayKey(new Date(Date.now() - 86400000));
+      if (day !== dayKey() && day !== yesterday) return respond(response, 400, {error: 'Invalid challenge date.'});
+      if (!validTicket(ticketKey, ticket, guest, day, id)) return respond(response, 403, {error: 'Invalid run ticket.'});
+      if (records.completed(guest, day)) {
+        return respond(response, 200, {accepted: false, progressRecorded: records.hasProgress(id, guest), ...records.totals(day)});
+      }
+      if (!validActions(actions)) return respond(response, 422, {error: 'Invalid run history.'});
+      if (replaying) return respond(response, 503, {error: 'Records are busy. Try again shortly.'});
+      replaying = true;
+      let verified;
+      try { verified = await replayInWorker(day, actions); } finally { replaying = false; }
+      const run = verified && {...verified, day, id};
+      if (!validateRun(run)) return respond(response, 422, {error: 'This run could not be verified.'});
+      const accepted = records.add(guest, run);
+      return respond(response, 200, {accepted, progressRecorded: records.hasProgress(id, guest), ...records.totals(day)});
     }
     if ((path === '/' || path === '/index.html') && request.method === 'GET') {
       response.writeHead(200, {'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache'});
@@ -63,7 +95,7 @@ createServer(async (request, response) => {
     return respond(response, 404, {error: 'Not found.'});
   } catch (error) {
     console.error(error);
-    if (!response.headersSent) respond(response, 500, {error: 'Records are unavailable.'});
+    if (!response.headersSent) respond(response, 500, {error: 'Service is unavailable.'});
     else response.end();
   }
 }).listen(port, host, () => console.log(`BecomeTheVeryBestdle is running at http://${host}:${port}/`));
