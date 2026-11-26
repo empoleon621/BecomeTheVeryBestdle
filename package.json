@@ -1,0 +1,22 @@
+{
+  "name": "become-the-very-bestdle",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "engines": {"node": ">=22.13.0"},
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "start": "node server/index.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@pkmn/randoms": "0.11.0",
+    "@pkmn/sim": "0.11.0"
+  },
+  "devDependencies": {
+    "vite": "^7.3.0",
+    "vite-plugin-singlefile": "^2.3.4"
+  }
+}
