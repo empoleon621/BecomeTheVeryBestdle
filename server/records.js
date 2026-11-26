@@ -7,6 +7,7 @@ const count = (value, max) => Number.isInteger(value) && value >= 0 && value <= 
 
 export function validateRun(value) {
   if (!value || !isId(value.id) || !/^\d{4}-\d{2}-\d{2}$/.test(value.day) || value.partial ||
+      (value.outcome !== 'win' && value.outcome !== 'loss') ||
       !Array.isArray(value.players) || value.players.length !== 6 || !Array.isArray(value.enemies) || value.enemies.length > 30) return false;
   const date = new Date(value.day);
   if (!Number.isFinite(date.valueOf()) || date.toISOString().slice(0, 10) !== value.day) return false;

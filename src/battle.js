@@ -441,10 +441,12 @@ export class LeagueRun {
 
   view() {
     const trainer = this.league[this.round];
+    const phase = this.phase;
+    const outcome = phase === 'champion' ? 'win' : phase === 'defeat' ? 'loss' : null;
     const summary = {
-      trainer, phase: this.phase, wins: this.wins, bag: {...this.bag}, canUseBag: this.canUseBag,
-      rewardOffers: this.phase === 'advance' ? rewardOffers(this.day, this.round) : [],
-      records: this.phase === 'defeat' || this.phase === 'champion' ? reportRun(this.stats, this.team) : null,
+      trainer, phase, wins: this.wins, bag: {...this.bag}, canUseBag: this.canUseBag,
+      rewardOffers: phase === 'advance' ? rewardOffers(this.day, this.round) : [],
+      records: outcome ? reportRun(this.stats, this.team, outcome) : null,
       next: this.league[this.round + 1], error: this.error,
       totalTurns: this.roundTurns.reduce((sum, turns) => sum + turns, this.battle?.turn ?? 0),
     };

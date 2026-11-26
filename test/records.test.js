@@ -39,6 +39,7 @@ test('shared counters count distinct guests once per date and reject mismatched 
   const store = openRecords(':memory:');
   try {
     assert.ok(validateRun(run));
+    assert.equal(validateRun({...run, outcome: null}), false);
     assert.equal(validateRun({...run, players: [...run.players.slice(0, 5), run.players[4]]}), false);
     assert.equal(store.add(idFor(1), run), true);
     assert.equal(store.completed(idFor(1), day), true);
