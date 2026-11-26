@@ -2,8 +2,7 @@ import {createServer} from 'node:http';
 import {mkdir, readFile} from 'node:fs/promises';
 import {dirname, resolve} from 'node:path';
 import {isId, openRecords, validateRun} from './records.js';
-import {validActions} from './replay.js';
-import {limitRequests, loadTicketKey, readJson, replayInWorker, signTicket, validTicket} from './security.js';
+import {limitRequests, loadTicketKey, readJson, signTicket, validTicket} from './security.js';
 import {dayKey} from '../src/league.js';
 
 const host = process.env.HOST ?? (process.env.PORT ? '0.0.0.0' : '127.0.0.1');
@@ -17,7 +16,10 @@ const ticketKey = await loadTicketKey(database + '.ticket-key');
 const records = openRecords(database);
 const allowRequest = limitRequests();
 const pagesOrigin = process.env.PAGES_ORIGIN;
-let replaying = false;
+
+function reportDay(day) {
+  return day === dayKey() || day === dayKey(new Date(Date.now() - 86400000));
+}
 
 function respond(response, status, value) {
   response.writeHead(status, {'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store'});
@@ -53,7 +55,7 @@ createServer({requestTimeout: 10000, headersTimeout: 5000, maxHeaderSize: 8192},
     if (request.method === 'POST' && ['/api/start', '/api/records', '/api/bugs'].includes(path)) {
       const cap = path === '/api/bugs' ? 4 : path === '/api/start' ? 24 : 12;
       if (!allowRequest(request, path, cap)) return respond(response, 429, {error: 'Try again shortly.'});
-      const {body, status} = await readJson(request, path === '/api/records' ? 65536 : 8192);
+      const {body, status} = await readJson(request, path === '/api/records' ? 16384 : 8192);
       if (status) return respond(response, status, {error: 'Invalid JSON request.'});
       if (path === '/api/bugs') {
         const message = typeof body?.message === 'string' && body.message.trim();
@@ -63,29 +65,24 @@ createServer({requestTimeout: 10000, headersTimeout: 5000, maxHeaderSize: 8192},
         records.saveBug(message);
         return respond(response, 201, {received: true});
       }
-      const {guest, day, id, ticket, actions} = body ?? {};
-      if (!isId(guest) || !isId(id)) return respond(response, 400, {error: 'Invalid run.'});
+      const {guest, ticket, run} = body ?? {};
+      const {day, id} = (path === '/api/start' ? body : run) ?? {};
+      if (!isId(guest) || !isId(id) || !reportDay(day)) {
+        return respond(response, 400, {error: 'Invalid run or challenge date.'});
+      }
+      const completed = records.completed(guest, day);
+      const sameRun = completed && records.hasRun(id, guest, day);
+      if (completed && !sameRun) return respond(response, 409, {error: 'This browser already completed a different run for this challenge.'});
       if (path === '/api/start') {
-        if (day !== dayKey()) return respond(response, 409, {error: 'Today’s challenge has changed. Refresh to continue.'});
-        if (records.completed(guest, day) || !records.start(guest, day, id)) {
+        if (!sameRun && !records.start(guest, day, id)) {
           return respond(response, 409, {error: 'This browser already has a run for this challenge.'});
         }
         return respond(response, 200, {ticket: signTicket(ticketKey, guest, day, id)});
       }
-      const yesterday = dayKey(new Date(Date.now() - 86400000));
-      if (day !== dayKey() && day !== yesterday) return respond(response, 400, {error: 'Invalid challenge date.'});
       if (!validTicket(ticketKey, ticket, guest, day, id)) return respond(response, 403, {error: 'Invalid run ticket.'});
-      if (records.completed(guest, day)) {
-        return respond(response, 200, {accepted: false, progressRecorded: records.hasProgress(id, guest), ...records.totals(day)});
-      }
-      if (!validActions(actions)) return respond(response, 422, {error: 'Invalid run history.'});
-      if (replaying) return respond(response, 503, {error: 'Records are busy. Try again shortly.'});
-      replaying = true;
-      let verified;
-      try { verified = await replayInWorker(day, actions); } finally { replaying = false; }
-      const run = verified && {...verified, day, id};
-      if (!validateRun(run)) return respond(response, 422, {error: 'This run could not be verified.'});
+      if (!validateRun(run)) return respond(response, 422, {error: 'This run report is invalid.'});
       const accepted = records.add(guest, run);
+      if (!accepted && !sameRun) return respond(response, 409, {error: 'This run ID was already submitted.'});
       return respond(response, 200, {accepted, progressRecorded: records.hasProgress(id, guest), ...records.totals(day)});
     }
     if ((path === '/' || path === '/index.html') && request.method === 'GET') {

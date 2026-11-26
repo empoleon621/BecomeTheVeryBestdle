@@ -6,10 +6,10 @@ export const isId = value => typeof value === 'string' && /^[a-f0-9]{32}$/.test(
 const count = (value, max) => Number.isInteger(value) && value >= 0 && value <= max;
 
 export function validateRun(value) {
-  if (!value || !isId(value.id) || !/^\d{4}-\d{2}-\d{2}$/.test(value.day) || value.partial ||
+  if (!value || !isId(value.id) || typeof value.day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value.day) || value.partial !== false ||
       (value.outcome !== 'win' && value.outcome !== 'loss') ||
-      (Object.hasOwn(value, 'turns') && (!count(value.turns, 10000) || value.turns < 1)) ||
-      (Object.hasOwn(value, 'defeated') && (!count(value.defeated, 30) || (value.outcome === 'win' && value.defeated !== 30))) ||
+      !count(value.turns, 10000) || value.turns < 1 || !count(value.defeated, 30) ||
+      (value.outcome === 'win' && value.defeated !== 30) ||
       !Array.isArray(value.players) || value.players.length !== 6 || !Array.isArray(value.enemies) || value.enemies.length > 30) return false;
   const date = new Date(value.day);
   if (!Number.isFinite(date.valueOf()) || date.toISOString().slice(0, 10) !== value.day) return false;
@@ -18,13 +18,15 @@ export function validateRun(value) {
     if (!row || !species.delete(row.species) || !count(row.kos, 30) || !count(row.damage, 10000000) ||
         !row.moves || typeof row.moves !== 'object' || Array.isArray(row.moves) || Object.keys(row.moves).length > 100) return false;
     for (const [move, clicks] of Object.entries(row.moves)) {
-      if (Dex.moves.get(move).id !== move || !Dex.moves.get(move).exists || !count(clicks, 10000)) return false;
+      if (Dex.moves.get(move).id !== move || !Dex.moves.get(move).exists || !count(clicks, value.turns)) return false;
     }
   }
-  if (value.players.reduce((sum, row) => sum + row.kos, 0) > 30) return false;
+  if (value.players.reduce((sum, row) => sum + row.kos, 0) > value.defeated) return false;
   const opponents = new Set(dailyLeague(value.day).flatMap(trainer =>
     trainer.team.map(set => trainer.id + '/' + Dex.species.get(set.species).id)));
-  return value.enemies.every(row => row && opponents.delete(row.trainer + '/' + row.species) && count(row.kos, 30));
+  return value.enemies.every(row => typeof row?.trainer === 'string' && typeof row.species === 'string' &&
+    opponents.delete(row.trainer + '/' + row.species) && count(row.kos, 10 + value.turns)) &&
+    value.enemies.reduce((sum, row) => sum + row.kos, 0) <= 10 + value.turns;
 }
 
 export function openRecords(filename) {
@@ -108,6 +110,7 @@ export function openRecords(filename) {
       };
     },
     completed(guest, day) { return Boolean(completed.get(guest, day)); },
+    hasRun(id, guest, day) { return Boolean(knownRun.get(id, guest, day)); },
     start(guest, day, id) {
       register.run(guest, day, id);
       return attempt.get(guest, day)?.run_id === id;

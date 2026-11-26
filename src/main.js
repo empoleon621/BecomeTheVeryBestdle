@@ -302,12 +302,11 @@ function reportDropdown(title, contents) {
 }
 
 function teamStats(rows, koTitle) {
-  const list = (value, sortedBy) => `<ul class="report-rows">${(sortedBy ?
-    [...rows].sort((a, b) => b[sortedBy] - a[sortedBy]) : rows).map(row => `<li>
+  const list = (value, score) => `<ul class="report-rows">${[...rows].sort((a, b) => score(b) - score(a)).map(row => `<li>
     <span>${escape(speciesName(row.species))}</span><strong>${value(row)}</strong></li>`).join('')}</ul>`;
-  return reportDropdown(koTitle, list(row => `${count(row.kos)} KO${row.kos === 1 ? '' : 's'}`, 'kos')) +
-    reportDropdown('Damage dealt', list(row => `${count(row.damage)} HP`, 'damage')) +
-    reportDropdown('Most-clicked moves', list(row => mostClicked(row.moves)));
+  return reportDropdown(koTitle, list(row => `${count(row.kos)} KO${row.kos === 1 ? '' : 's'}`, row => row.kos)) +
+    reportDropdown('Damage dealt', list(row => `${count(row.damage)} HP`, row => row.damage)) +
+    reportDropdown('Most-clicked moves', list(row => mostClicked(row.moves), row => row.moves[0]?.clicks ?? 0));
 }
 
 function enemyRecords(rows) {
@@ -333,14 +332,18 @@ function progressPercentile(records) {
 function globalReport(records) {
   const result = sharedRecords?.id === records.id ? sharedRecords : null;
   if (location.protocol === 'file:') return '<p>Open the game on a shared server to see global records.</p>';
-  if (result?.error) return '<p>Global records are unavailable. Refresh to try again.</p>';
-  if (!result?.data) return '<p>Loading global records…</p>';
+  const status = result?.submitted ? 'Your run is included in today’s standings.'
+    : records.partial ? 'This save only tracked part of your run.'
+    : result?.submissionError || 'Submitting your finished run…';
+  const message = `<p>${escape(status)}</p>`;
+  if (result?.error && !result.data) return `${message}<p>Global records are unavailable. Retrying automatically.</p>`;
+  if (!result?.data) return `${message}<p>Loading global records…</p>`;
   const {runs, players, enemies, fastestClear} = result.data;
   const rows = new Map(players.map(row => [row.species, row]));
   const team = records.players.map(({species}) => rows.get(species) ?? {species, kos: 0, damage: 0, moves: []});
   const clear = record => record ? `<strong>${count(record.turns)} turns</strong>${record.clears > 1 ? ` · ${count(record.clears)} runs tied` : ''}`
     : 'No recorded clear yet';
-  return `<p>${count(runs)} ${runs === 1 ? 'player finished' : 'players finished'} this challenge.</p>
+  return `${message}<p>${count(runs)} ${runs === 1 ? 'player finished' : 'players finished'} this challenge.</p>
     ${teamStats(team, 'Pokémon KO leaderboard')}
     ${reportDropdown('Deadliest opponents', enemyRecords(enemies.slice(0, 5)))}
     ${reportDropdown('Fastest clear', `<p>${clear(fastestClear)}</p>`)}`;
@@ -358,7 +361,6 @@ function runReport(records) {
     <h4>Your stats</h4>
     <p>Pokémon defeated · <strong>${count(records.defeated)} of 30</strong></p>
     ${records.partial ? '<p>This run started before tracking was added. Your report covers the battles tracked after the update.</p>' : ''}
-    ${!runTicket || !run.actions ? '<p>Start a run while connected to include it in the shared standings.</p>' : ''}
     <div class="report-group">
       ${teamStats(rows, 'Pokémon KOs')}
       ${reportDropdown('Opponents that scored KOs', enemyRecords(records.enemies))}
@@ -366,22 +368,59 @@ function runReport(records) {
   </section>`;
 }
 
+function publishFinishedRun(records) {
+  if (!records || sharedRecords || location.protocol === 'file:') return;
+  sharedRecords = {id: records.id};
+  void syncGlobalRecords(records);
+  setInterval(() => {
+    if (!document.hidden) void syncGlobalRecords(records);
+  }, 15000);
+}
+
 async function syncGlobalRecords(records) {
-  if (location.protocol === 'file:' || sharedRecords?.id === records.id) return;
-  const pending = sharedRecords = {id: records.id};
+  const state = sharedRecords;
+  if (state.loading) return;
+  state.loading = true;
+  const path = '/api/records?day=' + day;
   try {
-    const response = await fetch(recordsOrigin + '/api/records?day=' + day, records.partial || !runTicket || !run.actions ? undefined : {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({guest: guestId(), day, id: records.id, ticket: runTicket, actions: run.actions}),
-    });
-    if (!response.ok) throw new Error('Global records are unavailable.');
-    pending.data = await response.json();
+    let totals;
+    if (!records.partial && !state.submitted && !state.rejected) {
+      try {
+        if (!runTicket) {
+          ({ticket: runTicket} = await postRecords('/api/start', {guest: guestId(), day, id: records.id}));
+          save();
+        }
+        totals = await postRecords(path, {guest: guestId(), ticket: runTicket, run: {...records, day}});
+        if (totals.progressRecorded !== true) throw new Error('No leaderboard receipt.');
+        state.submitted = true;
+        state.included = totals.progressRecorded;
+        state.submissionError = '';
+      } catch (error) {
+        totals = undefined;
+        if (error.cause === 403) runTicket = undefined;
+        state.rejected = [400, 409, 422].includes(error.cause);
+        state.submissionError = state.rejected ? error.message : 'Your result hasn’t been saved yet. Retrying automatically.';
+      }
+    }
+    if (!totals) {
+      const response = await fetch(recordsOrigin + path, {signal: AbortSignal.timeout(8000)});
+      if (!response.ok) throw new Error();
+      totals = await response.json();
+    }
+    state.data = {...totals, progressRecorded: state.included};
+    state.error = false;
   } catch {
-    pending.error = true;
-  }
-  if (sharedRecords === pending) {
+    state.error = true;
+  } finally {
+    state.loading = false;
     const report = document.querySelector('#global-records');
-    if (report) report.innerHTML = globalReport(records);
+    const markup = globalReport(records);
+    if (report && state.markup !== markup) {
+      const open = [...report.querySelectorAll('details[open] summary')].map(summary => summary.textContent);
+      report.innerHTML = markup;
+      for (const summary of report.querySelectorAll('summary')) summary.parentElement.open = open.includes(summary.textContent);
+      state.markup = markup;
+    }
     const percentile = document.querySelector('#result-percentile');
     if (percentile) percentile.innerHTML = progressPercentile(records);
   }
@@ -394,21 +433,24 @@ function guestId() {
   return guest;
 }
 
+async function postRecords(path, body) {
+  const response = await fetch(recordsOrigin + path, {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, signal: AbortSignal.timeout(8000),
+    body: JSON.stringify(body),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.error || 'The leaderboard is unavailable.', {cause: response.status});
+  return result;
+}
+
 async function reserveRun() {
   if (location.protocol === 'file:' || runTicket) return '';
   try {
-    const response = await fetch(recordsOrigin + '/api/start', {
-      method: 'POST', headers: {'Content-Type': 'application/json'}, signal: AbortSignal.timeout(8000),
-      body: JSON.stringify({guest: guestId(), day, id: run.stats.id}),
-    });
-    if (response.status === 404) return '';
-    const result = await response.json();
-    if (!response.ok) return result.error || 'Please try again shortly.';
-    runTicket = result.ticket;
-    return '';
-  } catch {
-    return '';
+    ({ticket: runTicket} = await postRecords('/api/start', {guest: guestId(), day, id: run.stats.id}));
+  } catch (error) {
+    if ([400, 409].includes(error.cause)) return error.message;
   }
+  return '';
 }
 
 const itemIcons = {fullrestore: fullRestoreIcon, revive: reviveIcon, maxrevive: maxReviveIcon};
@@ -448,7 +490,7 @@ function render(keepSprites = false) {
   }
   scrollLog();
   clock();
-  if (view.records) void syncGlobalRecords(view.records);
+  publishFinishedRun(view.records);
 }
 
 function scrollLog() {
@@ -705,10 +747,12 @@ async function resolveAction(action, restoreFocus) {
     save();
     flash = typeof result === 'string' ? result : '';
     if (before.phase === 'battle') {
+      const after = run.view();
+      publishFinishedRun(after.records);
       busy = true;
       showPlayback(before.turn);
       try {
-        await playEvents(run.view().log.slice(before.log.length));
+        await playEvents(after.log.slice(before.log.length));
       } finally {
         busy = false;
         delete app.dataset.resolving;

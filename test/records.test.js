@@ -2,13 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {LeagueRun} from '../src/battle.js';
 import {openRecords, validateRun} from '../server/records.js';
-import {replayRun} from '../server/replay.js';
 import {signTicket, validTicket} from '../server/security.js';
 
 const day = '2026-11-26';
 const idFor = n => n.toString(16).padStart(32, '0');
 
-function playDefeat(reload, includeHistory = false) {
+function playDefeat(reload) {
   let run = new LeagueRun(day);
   assert.ok(run.start('reshiram'));
   for (let turns = 0; turns < 40 && run.phase === 'battle'; turns++) {
@@ -20,16 +19,15 @@ function playDefeat(reload, includeHistory = false) {
     if (reload && turns === 10) run = new LeagueRun(day, JSON.parse(JSON.stringify(run.snapshot())));
   }
   assert.equal(run.phase, 'defeat');
-  return {day, ...run.view().records, ...(includeHistory && {actions: run.actions})};
+  return {day, ...run.view().records};
 }
 
-test('replay verifies a completed run across a reload and ignores unfinished runs', () => {
-  const {day, id, actions, ...expected} = playDefeat(true, true);
-  const verified = replayRun(day, actions);
-  assert.ok(verified);
-  assert.deepEqual({...verified, id}, {...expected, id});
-  assert.equal(replayRun(day, actions.slice(0, -1)), null);
-  assert.equal(replayRun(day, [...actions, ['start', 'reshiram']]), null);
+test('accepts a complete personal defeat report and rejects impossible or partial reports', () => {
+  const defeat = playDefeat(true);
+  assert.equal(validateRun(defeat), true);
+  assert.equal(validateRun({...defeat, defeated: defeat.defeated - 1}), false);
+  assert.equal(validateRun({...defeat, turns: undefined}), false);
+  assert.equal(validateRun({...defeat, partial: true}), false);
 });
 
 test('tickets only authorize their original guest, day and run', () => {
@@ -105,6 +103,33 @@ test('daily progress records finished losses and wins without counting duplicate
       {defeated: 4, runs: 1}, {defeated: 9, runs: 1}, {defeated: 30, runs: 1},
     ]);
     assert.deepEqual(distribution('2026-11-27'), []);
+  } finally {
+    store.close();
+  }
+});
+
+test('shared KO totals add the personal counts from wins and losses exactly once', () => {
+  const defeat = playDefeat(true);
+  const withKOs = (slitherwing, slaking) => defeat.players.map(row => ({...row,
+    kos: row.species === 'slitherwing' ? slitherwing : row.species === 'slaking' ? slaking : 0,
+  }));
+  const reports = [
+    {...defeat, defeated: 10, players: withKOs(4, 1)},
+    {...defeat, id: idFor(13), outcome: 'win', defeated: 30, players: withKOs(2, 8)},
+    {...defeat, id: idFor(14), defeated: 0, players: withKOs(0, 0)},
+  ];
+  const store = openRecords(':memory:');
+  try {
+    for (const [index, report] of reports.entries()) {
+      assert.ok(validateRun(report));
+      assert.equal(store.add(idFor(index + 1), report), true);
+      assert.equal(store.add(idFor(index + 1), report), false);
+    }
+    const totals = store.totals(day);
+    assert.equal(totals.runs, 3);
+    assert.equal(totals.players.find(row => row.species === 'slitherwing').kos, 6);
+    assert.equal(totals.players.find(row => row.species === 'slaking').kos, 9);
+    assert.deepEqual({...totals.fastestClear}, {turns: defeat.turns, clears: 1});
   } finally {
     store.close();
   }

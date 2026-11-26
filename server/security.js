@@ -1,7 +1,6 @@
 import {createHmac, randomBytes, timingSafeEqual} from 'node:crypto';
 import {readFile, writeFile} from 'node:fs/promises';
 import {isIP} from 'node:net';
-import {Worker} from 'node:worker_threads';
 
 export async function loadTicketKey(path) {
   try {
@@ -52,21 +51,4 @@ export async function readJson(request, limit) {
   }
   try { return {body: JSON.parse(Buffer.concat(chunks).toString('utf8'))}; }
   catch { return {status: 400}; }
-}
-
-export function replayInWorker(day, actions) {
-  return new Promise(resolve => {
-    const worker = new Worker(new URL('./replay.js', import.meta.url), {
-      workerData: {day, actions}, resourceLimits: {maxOldGenerationSizeMb: 128},
-    });
-    const finish = value => {
-      clearTimeout(timeout);
-      void worker.terminate();
-      resolve(value);
-    };
-    const timeout = setTimeout(() => finish(null), 8000);
-    worker.once('message', finish);
-    worker.once('error', () => finish(null));
-    worker.once('exit', () => finish(null));
-  });
 }
