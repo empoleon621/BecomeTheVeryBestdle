@@ -4,7 +4,21 @@ import {champions, trainers} from './trainer-rosters.js';
 
 Teams.setGeneratorFactory(TeamGenerators);
 
-export const dayKey = (now = new Date()) => now.toISOString().slice(0, 10);
+const resetHour = 21;
+const pacificClock = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/Los_Angeles', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', hourCycle: 'h23',
+});
+
+export function dayKey(now = new Date(), offset = 0) {
+  const {year, month, day, hour} = Object.fromEntries(pacificClock.formatToParts(now).map(({type, value}) => [type, Number(value)]));
+  return new Date(Date.UTC(year, month - 1, day + Number(hour >= resetHour) + offset)).toISOString().slice(0, 10);
+}
+
+export function resetAt(day) {
+  const utc = new Date(`${day}T${resetHour}:00:00Z`);
+  const localHour = Number(pacificClock.formatToParts(utc).find(({type}) => type === 'hour').value);
+  return utc.getTime() + (resetHour - localHour) * 3600000;
+}
 
 export function seedFor(key) {
   let hash = 2166136261;

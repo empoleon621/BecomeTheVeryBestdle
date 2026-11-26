@@ -1,6 +1,6 @@
 import {Dex} from '@pkmn/sim';
 import {canUse, LeagueRun, rewardTargets} from './battle.js';
-import {bagItems, dayKey, rewards} from './league.js';
+import {bagItems, dayKey, resetAt, rewards} from './league.js';
 import {corridorArt, creaturePaths, idleFrame, trainerSprite, walkFrames} from './pixel-art.js';
 import {randomId} from './run-stats.js';
 import forest from './battle-forest.png';
@@ -12,6 +12,7 @@ import './style.css';
 const app = document.querySelector('#app');
 const details = document.querySelector('#details');
 const day = dayKey();
+const resetsAt = resetAt(day);
 const gameName = 'BecomeTheVeryBestdle';
 const storageKey = 'league-after-dark:v5';
 const recordsOrigin = import.meta.env.VITE_RECORDS_ORIGIN ?? '';
@@ -508,7 +509,7 @@ function renderMenu(focus) {
 function clock() {
   const label = document.querySelector('#clock');
   if (!label) return;
-  const wait = new Date(day + 'T00:00:00Z').getTime() + 86400000 - Date.now();
+  const wait = resetsAt - Date.now();
   if (wait <= 0) {
     label.innerHTML = '<a href="">New league available ↻</a>';
   } else {
@@ -778,12 +779,12 @@ async function doAction(action) {
   const view = run.view();
   if (action === 'how') {
     dialog('How to play', `<ol class="rules">
-      <li>Start with six Pokémon and an empty bag. The draft and opponents rotate at midnight UTC.</li>
+      <li>Start with six Pokémon and an empty bag. The team and opponents rotate at 9 p.m. Pacific.</li>
       <li>Pick your lead before each battle. Use Fight to attack, Party to switch, or Bag to use an item. Items spend a turn during battle.</li>
       <li>After each Elite Four win, claim one of three randomly offered rewards. The pool includes +5 levels for one Pokémon, a full-HP revive, full HP for up to two living Pokémon, three Full Restores, or one Max Revive.</li>
       <li>Move PP refills between battles. Levels, HP, fainting, status, and held items carry over. A Max Revive brings a fainted Pokémon back at full HP.</li>
       <li>Beat four Elite Four members and the Champion to finish the run. Your progress saves in this browser.</li>
-      <li>Complete one run per browser each UTC day. Your run report and the global records appear when the run ends.</li>
+      <li>Complete one run per browser each daily challenge. Your run report and the global records appear when the run ends.</li>
     </ol>`);
   }
   if (action === 'bag') openBag();

@@ -2,10 +2,25 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import {TeamValidator} from '@pkmn/sim';
-import {dailyLeague, draftTeam, rewardOffers, rewards} from '../src/league.js';
+import {dailyLeague, dayKey, draftTeam, resetAt, rewardOffers, rewards} from '../src/league.js';
 import {LeagueRun} from '../src/battle.js';
 
-test('independent runs of a UTC day draw the same six complete sets', () => {
+test('challenge resets at 9 p.m. Pacific across midnight UTC and daylight saving time', () => {
+  for (const [day, instant] of [
+    ['2026-11-26', '2026-11-27T05:00:00Z'],
+    ['2027-03-14', '2027-03-15T04:00:00Z'],
+    ['2027-11-07', '2027-11-08T05:00:00Z'],
+  ]) {
+    const reset = Date.parse(instant);
+    assert.equal(resetAt(day), reset);
+    assert.equal(dayKey(new Date(reset - 1)), day);
+    assert.equal(dayKey(new Date(reset)), instant.slice(0, 10));
+    assert.equal(dayKey(new Date(reset), -1), day);
+  }
+  assert.equal(dayKey(new Date('2026-11-27T00:00:00Z')), '2026-11-26');
+});
+
+test('independent runs of a challenge draw the same six complete sets', () => {
   const day = '2026-11-26';
   const draft = draftTeam(day);
   assert.equal(draft.length, 6);

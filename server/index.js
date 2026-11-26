@@ -18,7 +18,8 @@ const allowRequest = limitRequests();
 const pagesOrigin = process.env.PAGES_ORIGIN;
 
 function reportDay(day) {
-  return day === dayKey() || day === dayKey(new Date(Date.now() - 86400000));
+  const now = new Date();
+  return day === dayKey(now) || day === dayKey(now, -1);
 }
 
 function respond(response, status, value) {
