@@ -146,6 +146,43 @@ test('reload preserves the available choices, HP and the next turn outcome', () 
   assert.deepEqual(restored.view(), run.view());
 });
 
+test('Calm Mind reports the stat cap and exposes stage changes during playback', () => {
+  const day = '2026-11-27';
+  const run = new LeagueRun(day);
+  run.team[0].moves = ['Calm Mind', 'Growl'];
+  run.camp = run.initialParty();
+  run.league[0].team[0].moves = ['Splash'];
+  assert.ok(run.start('lugia'));
+  const firstTurn = run.view().log.length;
+  assert.ok(run.choose('move 1'));
+  const firstBoosts = run.view().log.slice(firstTurn).filter(entry => entry.event === '-boost');
+  assert.equal(firstBoosts[0].stages.p1.spa, 1);
+  assert.equal(firstBoosts[0].stages.p1.spd, 0);
+  assert.equal(firstBoosts[1].stages.p1.spd, 1);
+  for (let i = 0; i < 6; i++) assert.ok(run.choose('move 1'));
+  assert.equal(run.view().player.boosts.spa, 6);
+  assert.ok(run.view().log.some(entry => entry.message === 'Lugia’s Sp. Atk won’t go any higher!'));
+  for (let i = 0; i < 7; i++) assert.ok(run.choose('move 2'));
+  assert.equal(run.view().opponent.boosts.atk, -6);
+  assert.ok(run.view().log.some(entry => entry.message.endsWith('Attack won’t go any lower!')));
+  const restored = new LeagueRun(day, JSON.parse(JSON.stringify(run.snapshot())));
+  assert.equal(restored.view().player.boosts.spa, 6);
+  assert.ok(restored.choose('switch 2'));
+  assert.equal(restored.view().player.boosts.spa, 0);
+});
+
+test('Belly Drum reports capped Attack when the simulator emits a generic failure', () => {
+  const run = new LeagueRun('2026-11-27');
+  run.team[0].moves = ['Belly Drum'];
+  run.camp = run.initialParty();
+  run.league[0].team[0].moves = ['Splash'];
+  assert.ok(run.start('lugia'));
+  assert.ok(run.choose('move 1'));
+  assert.equal(run.view().player.boosts.atk, 6);
+  assert.ok(run.choose('move 1'));
+  assert.ok(run.view().log.some(entry => entry.message === 'Lugia’s Attack won’t go any higher!'));
+});
+
 test('Umbreon stops wasting Toxic on Hisuian Qwilfish starting with the November 27 challenge', () => {
   const run = new LeagueRun('2026-11-26', {round: 2});
   assert.ok(run.start('qwilfishhisui'));

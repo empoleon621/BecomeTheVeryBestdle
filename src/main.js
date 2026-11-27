@@ -158,10 +158,24 @@ function camp(view) {
   </section>`;
 }
 
+const stageLabels = {atk: 'Atk', def: 'Def', spa: 'SpAtk', spd: 'SpDef', spe: 'Spe', accuracy: 'Acc', evasion: 'Eva'};
+
+function stageBadges(stages) {
+  return Object.entries(stageLabels).map(([stat, label]) => {
+    const stage = stages?.[stat];
+    if (!stage) return '';
+    const base = stat === 'accuracy' || stat === 'evasion' ? 3 : 2;
+    const ratio = stage > 0 ? (base + stage) / base : base / (base - stage);
+    const multiplier = Number(ratio.toFixed(2));
+    return `<span class="stat-stage ${stage > 0 ? 'raised' : 'lowered'}">${label} ${multiplier}×</span>`;
+  }).join('');
+}
+
 function combatant(member, role) {
   const player = role === 'player';
+  const stages = member.hp ? stageBadges(member.boosts) : '';
   return `<div class="combat ${role}" data-combat="${role}:${escape(member.sprite)}">
-    <div class="stat-box">
+    <div class="combat-hud"><div class="stat-box">
       <div class="stat-content">
         <div class="stat-name"><strong title="${escape(member.name)}">${escape(member.name)}</strong><small>Lv.${member.level}</small></div>
         <div class="stat-meta"><span class="stat-types">${tags(member.types)}</span>
@@ -169,7 +183,7 @@ function combatant(member, role) {
         <div class="stat-health"><div class="stat-hp">${hpBar(member)}</div>
           <small class="hp-number">${player ? member.hp + '/' + member.maxhp : Math.ceil(100 * member.hp / member.maxhp) + '%'}</small></div>
       </div>
-    </div>
+    </div><div class="stat-stages" role="group" aria-label="Stat changes" ${stages ? '' : 'hidden'}>${stages}</div></div>
     <div class="fighter ${member.hp ? '' : 'fainted'}">${sprite(member, 'fight-art', {back:player, animated:true})}</div>
   </div>`;
 }
@@ -712,6 +726,12 @@ async function playEvents(events) {
     }
 
     activate(event.message);
+    for (const [side, stages] of Object.entries(event.stages ?? {})) {
+      const badges = document.querySelector(`.combat.${side === 'p1' ? 'player' : 'opponent'} .stat-stages`);
+      const markup = stageBadges(stages);
+      badges.innerHTML = markup;
+      badges.hidden = !markup;
+    }
     if (combat && event.status != null) {
       const badge = combat.querySelector('.combat-status');
       badge.textContent = statusName[event.status] ?? '';
@@ -743,6 +763,7 @@ async function playEvents(events) {
       continue;
     }
     if (fighter && event.event === 'faint') {
+      combat.querySelector('.stat-stages').hidden = true;
       if (!reducedMotion.matches) {
         await fighter.animate([{translate:'0 0', opacity:1}, {translate:'0 35px', opacity:0}],
           {duration:275, easing:'ease-in', fill:'forwards'}).finished;

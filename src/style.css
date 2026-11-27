@@ -91,11 +91,19 @@ a { color: inherit; text-decoration: none; }
 .dialog-arrow { color: var(--accent); font: 400 10px system-ui,sans-serif; }
 
 .combat { position: absolute; inset: 0; pointer-events: none; }
-.stat-box { z-index: 1; position: absolute; width: clamp(173px, 36%, 244px); height: 87px;
+.combat-hud { z-index: 1; position: absolute; width: clamp(173px, 36%, 244px); }
+.stat-box { position: relative; height: 87px;
   background: url('./graphics/hgss/hp-player.png') 0 0/100% 100%; image-rendering: pixelated;
   filter: drop-shadow(0 2px 2px #14241f45); }
-.opponent .stat-box { top: 12px; left: 0; height: 79px; background-image: url('./graphics/hgss/hp-opponent.png'); }
-.player .stat-box { bottom: 11px; right: 0; }
+.opponent .combat-hud { top: 12px; left: 0; }
+.opponent .stat-box { height: 79px; background-image: url('./graphics/hgss/hp-opponent.png'); }
+.player .combat-hud { bottom: 11px; right: 0; }
+.stat-stages { display: flex; flex-wrap: wrap; gap: 3px; padding: 3px 6% 0; }
+.stat-stages[hidden] { display: none; }
+.player .stat-stages { justify-content: flex-end; }
+.stat-stage { padding: 1px 4px; border: 1px solid currentColor; white-space: nowrap; font: 400 13px/1 var(--dialogue); }
+.stat-stage.raised { background: #ebf1d6; color: #354522; }
+.stat-stage.lowered { background: #f4dfd3; color: #71382b; }
 .stat-content { position: absolute; inset: 12px 6% 17px 14%; display: grid; grid-template-rows: auto 1fr auto; gap: 3px; }
 .opponent .stat-content { inset: 12px 13% 9px 6%; }
 .stat-name, .stat-meta, .stat-health { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 7px; }
@@ -288,13 +296,16 @@ textarea { width: 100%; padding: 7px; }
   .panel-head h2 { font-size: 22px; }
   .phase-tag { font-size: 11px; }
   .textbox { padding: 3px 5px; min-height: 49px; font-size: 17px; }
-  .stat-box { width: 49%; height: 74px; }
+  .combat-hud { width: 49%; }
+  .stat-box { height: 74px; }
   .stat-content { top: 10px; bottom: 15px; }
   .opponent .stat-content { top: 10px; bottom: 7px; }
   .stat-types .type, .stat-meta .status { font-size: 11px; }
   .stat-hp { height: 12px; border-left-width: 22px; border-image-width: 0 3px 0 22px; }
-  .opponent .stat-box { top: 6px; height: 66px; }
-  .player .stat-box { bottom: 6px; }
+  .opponent .combat-hud { top: 6px; }
+  .opponent .stat-box { height: 66px; }
+  .player .combat-hud { bottom: 6px; }
+  .stat-stage { font-size: 12px; padding-inline: 3px; }
   .opponent .fighter { width: 34%; right: 8%; bottom: 46%; }
   .player .fighter { height: 51%; left: 7%; }
   .panel-body { padding: 8px; }
@@ -314,7 +325,7 @@ textarea { width: 100%; padding: 7px; }
   .results { align-items: start; justify-content: center; flex-direction: column; padding-block: 5px; }
 }
 @media (max-width: 360px) {
-  .stat-box { width: 53%; }
+  .combat-hud { width: 53%; }
   .party-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 480px) {

@@ -97,27 +97,48 @@ function healthPercent(value) {
 }
 
 const hitMessages = new Set(['-crit', '-supereffective', '-resisted']);
+const statNames = {atk: 'Attack', def: 'Defense', spa: 'Sp. Atk', spd: 'Sp. Def', spe: 'Speed', accuracy: 'Accuracy', evasion: 'Evasion'};
+const emptyStages = {atk: 0, def: 0, spa: 0, spd: 0, spe: 0, accuracy: 0, evasion: 0};
 
 function formatLog(lines, trainer) {
   const entries = [];
+  const activeStages = {p1: emptyStages, p2: emptyStages};
+  let lastMover;
+  let lastMove;
   for (let index = 0; index < lines.length; index++) {
-    const [, event, who, arg, extra] = lines[index].split('|');
+    const [, event, who, arg, extra, source] = lines[index].split('|');
+    const side = who?.slice(0, 2);
+    const current = who?.[2] === 'a' && activeStages[side];
     const name = nameFrom(who);
     const detail = value => value?.replace(/^(?:\[from\] )?(?:move: |ability: |item: )?/, '');
     let message;
     let display;
+    let stages;
+    const setStages = (target, value) => {
+      activeStages[target] = value;
+      (stages ??= {})[target] = value;
+    };
     switch (event) {
     case 'split':
       index += 1;
       break;
     case 'bag': message = who; break;
-    case 'turn': message = 'Turn ' + who; break;
-    case 'move': message = name + ' used ' + arg + '!'; break;
+    case 'turn':
+      lastMove = undefined;
+      message = 'Turn ' + who;
+      break;
+    case 'move':
+      lastMover = who;
+      lastMove = arg;
+      message = name + ' used ' + arg + '!';
+      break;
     case 'switch':
     case 'drag':
     case 'replace': {
       const [species, level] = arg.split(', ');
-      display = {member: {...speciesInfo(species), ...readHealth(extra), level: level?.startsWith('L') ? Number(level.slice(1)) : 100}};
+      if (current && event !== 'replace' && !source?.endsWith('Baton Pass')) setStages(side, emptyStages);
+      display = {member: {...speciesInfo(species), ...readHealth(extra), boosts: activeStages[side],
+        level: level?.startsWith('L') ? Number(level.slice(1)) : 100}};
       if (event !== 'replace') message = (who.startsWith('p1') ? 'You sent out ' : trainer + ' sent out ') + name + '.';
       break;
     }
@@ -126,7 +147,10 @@ function formatLog(lines, trainer) {
     case '-resisted': message = 'It was not very effective.'; break;
     case '-crit': message = 'A critical hit!'; break;
     case '-miss': message = name + ' missed!'; break;
-    case '-fail': message = 'The move failed.'; break;
+    case '-fail':
+      message = who === lastMover && lastMove === 'Belly Drum' && current?.atk === 6
+        ? name + '’s Attack won’t go any higher!' : 'The move failed.';
+      break;
     case '-immune': message = 'It had no effect on ' + name + '.'; break;
     case '-status':
     case '-curestatus':
@@ -152,8 +176,57 @@ function formatLog(lines, trainer) {
     case '-sideend': message = detail(arg) + (event === '-sidestart' ? ' appeared on ' : ' cleared from ') + name + '’s side.'; break;
     case '-boost':
     case '-unboost': {
-      const stat = {atk: 'Attack', def: 'Defense', spa: 'Sp. Atk', spd: 'Sp. Def', spe: 'Speed', accuracy: 'accuracy', evasion: 'evasion'}[arg];
-      message = name + '’s ' + (stat ?? arg) + (event === '-boost' ? ' rose' : ' fell') + (Number(extra) > 1 ? ' by ' + extra + ' stages.' : '.');
+      const increase = event === '-boost';
+      const amount = Number(extra);
+      const label = name + '’s ' + (statNames[arg] ?? arg);
+      if (amount === 0) {
+        message = label + (increase ? ' won’t go any higher!' : ' won’t go any lower!');
+      } else {
+        if (current) setStages(side, {...current, [arg]: current[arg] + amount * (increase ? 1 : -1)});
+        message = label + (increase ? ' rose' : ' fell') + (amount > 1 ? ' by ' + amount + ' stages.' : '.');
+      }
+      break;
+    }
+    case '-setboost': {
+      const stage = Number(extra);
+      if (current) setStages(side, {...current, [arg]: stage});
+      message = name + '’s ' + (statNames[arg] ?? arg) + (stage === 6 ? ' was maxed out!' : ' changed.');
+      break;
+    }
+    case '-clearallboost':
+      setStages('p1', emptyStages);
+      setStages('p2', emptyStages);
+      message = 'All stat changes were reset.';
+      break;
+    case '-clearboost':
+    case '-clearpositiveboost':
+    case '-clearnegativeboost':
+    case '-invertboost': {
+      if (current) {
+        const updated = Object.fromEntries(Object.entries(current).map(([stat, value]) => [stat,
+          event === '-clearpositiveboost' ? Math.min(0, value) : event === '-clearnegativeboost' ? Math.max(0, value)
+            : event === '-invertboost' ? -value : 0,
+        ]));
+        setStages(side, updated);
+      }
+      const action = {'-clearpositiveboost': 'stat boosts were cleared.', '-clearnegativeboost': 'stat drops were cleared.',
+        '-invertboost': 'stat changes were reversed.'}[event] ?? 'stat changes were reset.';
+      message = name + '’s ' + action;
+      break;
+    }
+    case '-swapboost':
+    case '-copyboost':
+    case '-transform': {
+      const otherSide = arg?.slice(0, 2);
+      const other = activeStages[otherSide];
+      if (current && other) {
+        const keys = extra && !extra.startsWith('[') && event !== '-transform' ? extra.split(', ') : Object.keys(emptyStages);
+        const from = value => Object.fromEntries(keys.map(key => [key, value[key]]));
+        if (event === '-swapboost') setStages(otherSide, {...other, ...from(current)});
+        setStages(side, {...current, ...from(other)});
+      }
+      message = event === '-transform' ? name + ' transformed into ' + nameFrom(arg) + '.' :
+        name + (event === '-swapboost' ? ' swapped stat changes with ' : ' copied stat changes from ') + nameFrom(arg) + '.';
       break;
     }
     case '-start': message = name + ' was affected by ' + detail(arg) + '.'; break;
@@ -168,14 +241,12 @@ function formatLog(lines, trainer) {
       break;
     case '-hitcount': message = 'Hit ' + arg + ' times.'; break;
     case '-activate': message = name + ' activated ' + detail(arg) + '.'; break;
-    case '-transform': message = name + ' transformed into ' + nameFrom(arg) + '.'; break;
     case 'cant': message = name + ' could not move (' + (conditionText[arg] ?? detail(arg)) + ').'; break;
     case 'win': message = who === 'Challenger' ? 'You won the battle!' : trainer + ' won the battle.'; break;
     case 'tie': message = 'The battle ended in a draw.'; break;
     }
-    if (!message && !display) continue;
-    const side = who?.slice(0, 2);
-    const entry = {message, turn: event === 'turn', event, side, ...display};
+    if (!message && !display && !stages) continue;
+    const entry = {message, turn: event === 'turn', event, side, ...display, ...(stages && {stages})};
     let position = entries.length;
     if (event === '-damage' && display) {
       while (position > 0 && hitMessages.has(entries[position - 1].event) && entries[position - 1].side === side) position--;
@@ -190,6 +261,7 @@ function memberView(pokemon) {
     ...speciesInfo(pokemon.species.name),
     types: pokemon.getTypes(), level: pokemon.level, hp: pokemon.hp, maxhp: pokemon.maxhp,
     item: pokemon.getItem().name, ability: pokemon.getAbility().name, status: pokemon.status,
+    boosts: {...pokemon.boosts},
     active: pokemon.isActive && pokemon.hp > 0, slot: pokemon.position + 1,
   };
 }
