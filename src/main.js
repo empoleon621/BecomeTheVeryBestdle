@@ -360,12 +360,13 @@ function globalReport(records) {
   const message = `<p>${escape(status)}</p>`;
   if (result?.error && !result.data) return `${message}<p>Global records are unavailable. Retrying automatically.</p>`;
   if (!result?.data) return `${message}<p>Loading global records…</p>`;
-  const {runs, players, enemies, fastestClear} = result.data;
+  const {runs, championClears, players, enemies, fastestClear} = result.data;
   const rows = new Map(players.map(row => [row.species, row]));
   const team = records.players.map(({species}) => rows.get(species) ?? {species, kos: 0, damage: 0, moves: []});
   const clear = record => record ? `<strong>${count(record.turns)} turns</strong>${record.clears > 1 ? ` · ${count(record.clears)} runs tied` : ''}`
     : 'No recorded clear yet';
   return `${message}<p>${count(runs)} ${runs === 1 ? 'player finished' : 'players finished'} this challenge.</p>
+    ${Number.isInteger(championClears) ? `<p>${count(championClears)} ${championClears === 1 ? 'player' : 'players'} beat the Champion.</p>` : ''}
     ${teamStats(team, 'Pokémon KO leaderboard')}
     ${reportDropdown('Deadliest opponents', enemyRecords(enemies.slice(0, 5)))}
     ${reportDropdown('Fastest clear', `<p>${clear(fastestClear)}</p>`)}`;

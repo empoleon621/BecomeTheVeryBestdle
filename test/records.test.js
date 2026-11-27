@@ -77,6 +77,7 @@ test('fastest clears rank wins within the same challenge and count ties once per
   try {
     assert.equal(store.add(idFor(1), {...loss, turns: 1}), true);
     assert.equal(fastestClear(day), null);
+    assert.equal(store.totals(day).championClears, 0);
 
     const win = {...loss, id: idFor(10), outcome: 'win', turns: 38, defeated: 30};
     assert.equal(validateRun(win), true);
@@ -85,7 +86,9 @@ test('fastest clears rank wins within the same challenge and count ties once per
     assert.equal(store.add(idFor(2), win), true);
     assert.equal(store.add(idFor(2), {...win, id: idFor(11), turns: 12}), false);
     assert.equal(store.add(idFor(3), {...win, id: idFor(12)}), true);
+    assert.equal(store.add(idFor(5), {...win, id: idFor(15), turns: 50}), true);
     assert.deepEqual(fastestClear(day), {turns: 38, clears: 2});
+    assert.equal(store.totals(day).championClears, 3);
 
     const tomorrow = '2026-11-27';
     assert.equal(store.add(idFor(2), {...win, id: idFor(13), day: tomorrow, turns: 31}), true);
@@ -94,7 +97,9 @@ test('fastest clears rank wins within the same challenge and count ties once per
     assert.deepEqual(fastestClear(tomorrow), {turns: 31, clears: 1});
     assert.equal(store.add(idFor(4), {...win, id: idFor(14), turns: 36}), false);
     assert.deepEqual(fastestClear(day), {turns: 36, clears: 1});
-    assert.equal(store.totals(day).runs, 4);
+    assert.equal(store.totals(day).championClears, 4);
+    assert.equal(store.totals(tomorrow).championClears, 1);
+    assert.equal(store.totals(day).runs, 5);
   } finally {
     store.close();
   }

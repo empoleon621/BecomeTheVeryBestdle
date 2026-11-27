@@ -59,7 +59,8 @@ export function openRecords(filename) {
     SET kos = kos + excluded.kos, damage = damage + excluded.damage`);
   const addMove = db.prepare(`INSERT INTO daily_moves VALUES (?, ?, ?, ?) ON CONFLICT (day, species, move) DO UPDATE SET clicks = clicks + excluded.clicks`);
   const addEnemy = db.prepare(`INSERT INTO daily_enemies VALUES (?, ?, ?, ?) ON CONFLICT (day, trainer, species) DO UPDATE SET kos = kos + excluded.kos`);
-  const runCount = db.prepare('SELECT COUNT(*) AS total FROM daily_reports WHERE day = ?');
+  const runCounts = db.prepare(`SELECT COUNT(*) AS runs, COUNT(clears.run_id) AS championClears
+    FROM daily_reports LEFT JOIN clears USING (run_id) WHERE daily_reports.day = ?`);
   const completed = db.prepare('SELECT 1 FROM runs WHERE guest = ? AND day = ?');
   const register = db.prepare('INSERT INTO attempts VALUES (?, ?, ?) ON CONFLICT DO NOTHING');
   const attempt = db.prepare('SELECT run_id FROM attempts WHERE guest = ? AND day = ?');
@@ -107,7 +108,7 @@ export function openRecords(filename) {
         favorites.get(row.species).push(row);
       }
       return {
-        runs: runCount.get(day).total,
+        ...runCounts.get(day),
         players: players.all(day).map(row => ({...row, moves: favorites.get(row.species) ?? []})),
         enemies: enemies.all(day),
         fastestClear: dailyFastest.get(day) ?? null,
