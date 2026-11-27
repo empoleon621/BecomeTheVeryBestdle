@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import {Dex, TeamValidator} from '@pkmn/sim';
-import {dailyLeague, dayKey, draftTeam, expandedElitePoolsFrom, resetAt, rewardOffers, rewards} from '../src/league.js';
+import {dailyLeague, dayKey, draftTeam, expandedElitePoolsFrom, isArchiveDay, resetAt, rewardOffers, rewards} from '../src/league.js';
 import {LeagueRun} from '../src/battle.js';
 import {eliteMonotypeSets} from '../src/elite-monotype-sets.js';
 import {trainers} from '../src/trainer-rosters.js';
@@ -34,6 +34,16 @@ test('independent runs of a challenge draw the same six complete sets', () => {
   }
   assert.deepEqual(draftTeam(day), draft);
   assert.notDeepEqual(draftTeam('2026-11-27'), draft);
+});
+
+test('archive accepts completed challenge dates and rejects current, future, and invalid dates', () => {
+  assert.ok(isArchiveDay('2026-11-26', '2026-11-27'));
+  assert.ok(isArchiveDay('2026-11-28', '2026-12-01'));
+  for (const date of [null, '2026-11-25', '2026-11-31', '26-11-2026']) {
+    assert.equal(isArchiveDay(date, '2026-12-01'), false, String(date));
+  }
+  assert.equal(isArchiveDay('2026-11-27', '2026-11-27'), false);
+  assert.equal(isArchiveDay('2026-11-28', '2026-11-27'), false);
 });
 
 const nationalDex = new TeamValidator('gen9nationaldexag@@@Species Clause,Terastal Clause,-Tera Blast');

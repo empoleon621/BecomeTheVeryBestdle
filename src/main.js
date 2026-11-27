@@ -1,6 +1,6 @@
 import {Dex} from '@pkmn/sim';
 import {canUse, LeagueRun, rewardTargets} from './battle.js';
-import {bagItems, dayKey, resetAt, rewards} from './league.js';
+import {bagItems, dayKey, firstChallengeDay, isArchiveDay, resetAt, rewards} from './league.js';
 import {corridorArt, creaturePaths, idleFrame, trainerSprite, walkFrames} from './pixel-art.js';
 import {randomId} from './run-stats.js';
 import forest from './battle-forest.png';
@@ -11,11 +11,14 @@ import './style.css';
 
 const app = document.querySelector('#app');
 const details = document.querySelector('#details');
-const day = dayKey();
+const today = dayKey();
+const requestedArchive = new URLSearchParams(location.search).get('archive');
+const archiveDay = isArchiveDay(requestedArchive, today) ? requestedArchive : null;
+const day = archiveDay ?? today;
 const resetsAt = resetAt(day);
 const gameName = 'BecomeTheVeryBestdle';
 const gameUrl = 'https://empoleon621.github.io/BecomeTheVeryBestdle/';
-const storageKey = 'league-after-dark:v5';
+const storageKey = archiveDay ? 'bestdle:archive:' + day : 'league-after-dark:v5';
 const recordsOrigin = import.meta.env.VITE_RECORDS_ORIGIN ?? '';
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 const colors = {
@@ -61,7 +64,7 @@ let logOpen = false;
 let travelTimer;
 
 function save() {
-  if (dayKey() !== day) return;
+  if (!archiveDay && dayKey() !== day) return;
   try {
     localStorage.setItem(storageKey, JSON.stringify({day, ...run.snapshot(), ticket: runTicket}));
   } catch {
@@ -254,7 +257,8 @@ function actions(view) {
         <p>${escape(description)}</p>
       </div></div>
       ${view.phase === 'advance' ? rewardMenu(view) :
-      `<div class="result-buttons"><button class="primary" data-action="copy">${copied ? 'Result copied ✓' : 'Copy result'}</button></div>`}
+      `<div class="result-buttons"><button class="primary" data-action="copy">${copied ? 'Result copied ✓' : 'Copy result'}</button>
+        ${archiveDay ? '<button class="secondary" data-action="replay-archive">Replay day</button>' : ''}</div>`}
     </div>`;
   }
   const screen = view.forced ? 'party' : menu;
@@ -338,17 +342,19 @@ function progressPercentile(records) {
   const {dailyProgress: distribution = [], progressRecorded: included = false} = result.data;
   const {defeated} = records;
   const others = distribution.reduce((sum, bucket) => sum + bucket.runs, 0) - Number(included);
-  if (others < 1) return 'Progress percentile · Waiting for another player to finish.';
+  if (others < 1) return archiveDay ? 'Progress percentile · No recorded runs for this challenge.' :
+    'Progress percentile · Waiting for another player to finish.';
   const behind = distribution.filter(bucket => bucket.defeated < defeated).reduce((sum, bucket) => sum + bucket.runs, 0);
   const tied = (distribution.find(bucket => bucket.defeated === defeated)?.runs ?? 0) - Number(included);
-  return `You got farther than <strong>${count(Math.floor(behind * 100 / others))}%</strong> of the other players
-    who finished this challenge.${tied ? ` ${count(tied)} tied.` : ''}`;
+  const comparison = archiveDay ? 'the recorded runs for this challenge' : 'the other players who finished this challenge';
+  return `You got farther than <strong>${count(Math.floor(behind * 100 / others))}%</strong> of ${comparison}.${tied ? ` ${count(tied)} tied.` : ''}`;
 }
 
 function globalReport(records) {
   const result = sharedRecords?.id === records.id ? sharedRecords : null;
   if (location.protocol === 'file:') return '<p>Open the game on a shared server to see global records.</p>';
-  const status = result?.submitted ? 'Your run is included in today’s standings.'
+  const status = archiveDay ? 'Archive runs don’t change the daily standings.'
+    : result?.submitted ? 'Your run is included in today’s standings.'
     : records.partial ? 'This save only tracked part of your run.'
     : result?.submissionError || 'Submitting your finished run…';
   const message = `<p>${escape(status)}</p>`;
@@ -400,7 +406,7 @@ async function syncGlobalRecords(records) {
   const path = '/api/records?day=' + day;
   try {
     let totals;
-    if (!records.partial && !state.submitted && !state.rejected) {
+    if (!archiveDay && !records.partial && !state.submitted && !state.rejected) {
       try {
         if (!runTicket) {
           ({ticket: runTicket} = await postRecords('/api/start', {guest: guestId(), day, id: records.id}));
@@ -477,7 +483,7 @@ async function postRecords(path, body) {
 }
 
 async function reserveRun() {
-  if (location.protocol === 'file:' || runTicket) return '';
+  if (archiveDay || location.protocol === 'file:' || runTicket) return '';
   try {
     ({ticket: runTicket} = await postRecords('/api/start', {guest: guestId(), day, id: run.stats.id}));
   } catch (error) {
@@ -505,12 +511,14 @@ function render(keepSprites = false) {
   }
   if (!view.team.some(member => member.id === selected && member.hp)) selected = view.team.find(member => member.hp)?.id;
   app.innerHTML = `<header class="topbar"><div class="frame top-inner">
-    <a class="brand" href="" aria-label="${gameName} home"><i class="ball"></i><h1>${gameName}</h1></a>
+    <a class="brand" href="?" aria-label="${gameName} home"><i class="ball"></i><h1>${gameName}</h1></a>
     <button class="quiet help" data-action="how">How to play</button>
     </div></header>
     <main class="frame">
-      <section class="route" aria-labelledby="route-heading"><div class="route-head"><h2 id="route-heading">Today’s league</h2>
-        <div class="date"><time datetime="${day}">${date}</time><span id="clock"></span></div></div>
+      <section class="route" aria-labelledby="route-heading"><div class="route-head">
+        <div class="route-nav"><h2 id="route-heading">${archiveDay ? 'Archived league' : 'Today’s league'}</h2>
+          <button class="quiet" data-action="archive">${archiveDay ? 'Change date' : 'Archive'}</button></div>
+        <div class="date"><time datetime="${day}">${date}</time>${archiveDay ? '<a href="?">Play today</a>' : '<span id="clock"></span>'}</div></div>
         <ol>${itinerary(view)}</ol></section>
       ${view.phase === 'camp' ? camp(view) : battle(view)}
       ${record(view)}
@@ -816,6 +824,16 @@ function endWalk() {
 
 async function doAction(action) {
   const view = run.view();
+  if (action === 'archive') {
+    const latest = dayKey(new Date(), -1);
+    dialog('Archive', latest < firstChallengeDay ? '<p>Past challenges will appear here after the daily reset.</p>' :
+      `<form id="archive-form">
+        <p>Replay a past challenge and compare your result with its original standings.</p>
+        <label for="archive-date">Challenge date</label>
+        <div class="archive-controls"><input id="archive-date" type="date" min="${firstChallengeDay}" max="${latest}" value="${archiveDay ?? latest}" required>
+          <button class="primary" type="submit">Play challenge</button></div>
+      </form>`);
+  }
   if (action === 'how') {
     dialog('How to play', `<ol class="rules">
       <li>Start with six Pokémon and an empty bag. The team and opponents rotate at 9 p.m. Pacific.</li>
@@ -879,8 +897,14 @@ async function doAction(action) {
     render();
     if (walking) travelTimer = setTimeout(endWalk, 1350);
   }
+  if (action === 'replay-archive' && archiveDay) {
+    run = new LeagueRun(day);
+    save();
+    location.reload();
+  }
   if (action === 'copy') {
-    const text = `${gameName} · ${date}\n${'🟩'.repeat(view.wins)}${'⬜'.repeat(5 - view.wins)} ${view.wins}/5 · ${view.totalTurns} turns\n${gameUrl}`;
+    const shareUrl = archiveDay ? `${gameUrl}?archive=${day}` : gameUrl;
+    const text = `${gameName} · ${date}${archiveDay ? ' · Archive' : ''}\n${'🟩'.repeat(view.wins)}${'⬜'.repeat(5 - view.wins)} ${view.wins}/5 · ${view.totalTurns} turns\n${shareUrl}`;
     (navigator.clipboard?.writeText(text) ?? Promise.reject()).then(() => {
       copied = true;
       render();
@@ -928,6 +952,12 @@ details.addEventListener('click', event => {
 });
 
 details.addEventListener('submit', async event => {
+  if (event.target.id === 'archive-form') {
+    event.preventDefault();
+    const input = event.target.querySelector('#archive-date');
+    if (isArchiveDay(input.value)) location.search = '?archive=' + input.value;
+    return;
+  }
   if (event.target.id !== 'bug-report-form') return;
   event.preventDefault();
   const form = event.target;

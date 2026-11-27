@@ -6,6 +6,7 @@ import {champions, trainers} from './trainer-rosters.js';
 Teams.setGeneratorFactory(TeamGenerators);
 
 const resetHour = 21;
+export const firstChallengeDay = '2026-11-26';
 const pacificClock = new Intl.DateTimeFormat('en-US', {
   timeZone: 'America/Los_Angeles', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', hourCycle: 'h23',
 });
@@ -19,6 +20,12 @@ export function resetAt(day) {
   const utc = new Date(`${day}T${resetHour}:00:00Z`);
   const localHour = Number(pacificClock.formatToParts(utc).find(({type}) => type === 'hour').value);
   return utc.getTime() + (resetHour - localHour) * 3600000;
+}
+
+export function isArchiveDay(day, currentDay = dayKey()) {
+  if (typeof day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(day) || day < firstChallengeDay || day >= currentDay) return false;
+  const date = new Date(day + 'T00:00:00Z');
+  return Number.isFinite(date.valueOf()) && date.toISOString().slice(0, 10) === day;
 }
 
 export function seedFor(key) {
