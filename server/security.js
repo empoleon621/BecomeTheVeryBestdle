@@ -20,6 +20,10 @@ export function validTicket(key, ticket, guest, day, id) {
     timingSafeEqual(Buffer.from(ticket, 'hex'), Buffer.from(signTicket(key, guest, day, id), 'hex'));
 }
 
+export function hashVisitor(key, visitor) {
+  return createHmac('sha256', key).update('traffic/' + visitor).digest('hex');
+}
+
 export function limitRequests() {
   const counters = new Map();
   let expires = 0;

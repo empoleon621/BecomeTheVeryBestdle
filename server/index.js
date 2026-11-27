@@ -2,7 +2,8 @@ import {createServer} from 'node:http';
 import {mkdir, readFile} from 'node:fs/promises';
 import {dirname, resolve} from 'node:path';
 import {isId, openRecords, validateRun} from './records.js';
-import {limitRequests, loadTicketKey, readJson, signTicket, validTicket} from './security.js';
+import {hashVisitor, limitRequests, loadTicketKey, readJson, signTicket, validTicket} from './security.js';
+import {pacificDate} from './traffic.js';
 import {dayKey} from '../src/league.js';
 
 const host = process.env.HOST ?? (process.env.PORT ? '0.0.0.0' : '127.0.0.1');
@@ -52,6 +53,16 @@ createServer({requestTimeout: 10000, headersTimeout: 5000, maxHeaderSize: 8192},
       const day = searchParams.get('day') ?? dayKey();
       if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return respond(response, 400, {error: 'Invalid date.'});
       return respond(response, 200, records.totals(day));
+    }
+    if (path === '/api/visit' && request.method === 'POST') {
+      if (!origin) return respond(response, 403, {error: 'Origin is required.'});
+      if (!allowRequest(request, path, 120)) return respond(response, 429, {error: 'Try again shortly.'});
+      const {body, status} = await readJson(request, 1024);
+      if (status) return respond(response, status, {error: 'Invalid JSON request.'});
+      if (body?.visitor !== null && !isId(body?.visitor)) return respond(response, 400, {error: 'Invalid visitor ID.'});
+      records.visit(pacificDate(), body.visitor ? hashVisitor(ticketKey, body.visitor) : '');
+      response.writeHead(204, {'Cache-Control': 'no-store'});
+      return response.end();
     }
     if (request.method === 'POST' && ['/api/start', '/api/records', '/api/bugs'].includes(path)) {
       const cap = path === '/api/bugs' ? 4 : path === '/api/start' ? 24 : 12;

@@ -435,6 +435,23 @@ function guestId() {
   return guest;
 }
 
+function trackPageLoad() {
+  if (location.protocol === 'file:') return;
+  const key = 'bestdle:traffic-visitor';
+  let visitor = null;
+  try {
+    const id = localStorage.getItem(key) || randomId();
+    localStorage.setItem(key, id);
+    visitor = id;
+  } catch {
+    // Count the page load without identifying the browser when storage is unavailable.
+  }
+  void fetch(recordsOrigin + '/api/visit', {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, keepalive: true,
+    body: JSON.stringify({visitor}),
+  }).catch(() => {});
+}
+
 async function postRecords(path, body) {
   const response = await fetch(recordsOrigin + path, {
     method: 'POST', headers: {'Content-Type': 'application/json'}, signal: AbortSignal.timeout(8000),
@@ -945,4 +962,5 @@ document.addEventListener('keydown', event => {
 
 save();
 render();
+trackPageLoad();
 setInterval(clock, 15000);
