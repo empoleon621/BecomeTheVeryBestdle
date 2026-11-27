@@ -14,6 +14,7 @@ const details = document.querySelector('#details');
 const day = dayKey();
 const resetsAt = resetAt(day);
 const gameName = 'BecomeTheVeryBestdle';
+const gameUrl = 'https://empoleon621.github.io/BecomeTheVeryBestdle/';
 const storageKey = 'league-after-dark:v5';
 const recordsOrigin = import.meta.env.VITE_RECORDS_ORIGIN ?? '';
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -841,7 +842,7 @@ async function doAction(action) {
     if (walking) travelTimer = setTimeout(endWalk, 1350);
   }
   if (action === 'copy') {
-    const text = `${gameName} · ${date}\n${'🟩'.repeat(view.wins)}${'⬜'.repeat(5 - view.wins)} ${view.wins}/5 · ${view.totalTurns} turns`;
+    const text = `${gameName} · ${date}\n${'🟩'.repeat(view.wins)}${'⬜'.repeat(5 - view.wins)} ${view.wins}/5 · ${view.totalTurns} turns\n${gameUrl}`;
     (navigator.clipboard?.writeText(text) ?? Promise.reject()).then(() => {
       copied = true;
       render();
