@@ -73,7 +73,7 @@ export function openRecords(filename) {
   ) WHERE rank = 1 ORDER BY species, move`);
   const enemies = db.prepare('SELECT trainer, species, kos FROM daily_enemies WHERE day = ? AND kos > 0 ORDER BY kos DESC, trainer, species');
   const dailyFastest = db.prepare(`SELECT turns, COUNT(*) AS clears FROM clears JOIN daily_reports USING (run_id)
-    WHERE clears.day = ? GROUP BY turns ORDER BY turns LIMIT 1`);
+    WHERE clears.day = ? GROUP BY turns ORDER BY turns LIMIT 3`);
   const dailyProgress = db.prepare(`SELECT defeated, COUNT(*) AS runs FROM progress JOIN daily_reports USING (run_id)
     WHERE progress.day = ? GROUP BY defeated ORDER BY defeated`);
   const recordedProgress = db.prepare('SELECT 1 FROM progress JOIN runs ON runs.id = progress.run_id WHERE runs.id = ? AND guest = ?');
@@ -107,11 +107,13 @@ export function openRecords(filename) {
         if (!favorites.has(row.species)) favorites.set(row.species, []);
         favorites.get(row.species).push(row);
       }
+      const fastest = dailyFastest.all(day);
       return {
         ...runCounts.get(day),
         players: players.all(day).map(row => ({...row, moves: favorites.get(row.species) ?? []})),
         enemies: enemies.all(day),
-        fastestClear: dailyFastest.get(day) ?? null,
+        fastestClear: fastest[0] ?? null,
+        fastestClears: fastest.flatMap(({turns, clears}) => Array(Math.min(clears, 3)).fill(turns)).slice(0, 3),
         dailyProgress: dailyProgress.all(day),
       };
     },
