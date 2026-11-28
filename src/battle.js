@@ -1,9 +1,11 @@
 import {Battle, Dex, PRNG} from '@pkmn/sim';
 import {bagItems, dailyLeague, draftTeam, expandedElitePoolsFrom, rewardOffers, rewards, seedFor, speciesInfo, typedEliteFrom} from './league.js';
+import {chooseTrainerAction} from './trainer-ai.js';
 import {newRunStats, recordMove, reportRun, trackBattle} from './run-stats.js';
 
 const formatid = 'gen9customgame@@@!Team Preview,Terastal Clause';
 const battleFormat = day => day >= expandedElitePoolsFrom ? formatid + ',NatDex Mod' : formatid;
+const smartTrainerFrom = '2026-11-29';
 const toxicImmunityFrom = '2026-11-27';
 const healing = new Set(['recover', 'roost', 'strengthsap', 'morningsun', 'slackoff']);
 const setup = new Set(['dragondance', 'swordsdance', 'calmmind', 'bulkup', 'quiverdance', 'nastyplot']);
@@ -41,6 +43,7 @@ function damageValue(move, user, target, battle) {
 }
 
 function cpuChoice(battle, seed, day) {
+  if (day >= smartTrainerFrom) return chooseTrainerAction(battle, seed);
   const {p1, p2} = battle;
   const request = p2.activeRequest;
   const user = p2.active[0];
@@ -462,12 +465,16 @@ export class LeagueRun {
     const player = this.battle.p1;
     const pokemon = player.active[0];
     const move = command.startsWith('move ') && player.activeRequest?.active?.[0]?.moves[Number(command.at(-1)) - 1];
-    if (!this.battle.choose('p1', command)) {
+    const {battle, day, round} = this;
+    const opponent = battle.p2;
+    const cpu = day >= smartTrainerFrom && opponent.activeRequest && !opponent.activeRequest.wait &&
+      !opponent.isChoiceDone() ? cpuChoice(battle, seedFor('cpu/' + day + '/' + round + '/' + battle.turn + '/0'), day) : undefined;
+    if (!battle.choose('p1', command)) {
       this.error = (this.battle.p1.choice.error || 'That action is unavailable.').replace(/^\[(?:Invalid|Unavailable) choice\] /, '');
       return false;
     }
     if (move) recordMove(this.stats, pokemon, move.id);
-    this.finishTurn();
+    this.finishTurn(cpu);
     return true;
   }
 
@@ -544,6 +551,7 @@ export class LeagueRun {
     const active = request?.active?.[0];
     return {
       ...summary, turn, forced: !!request?.forceSwitch?.[0], trapped: !!active?.trapped,
+      reviving: !!p1.slotConditions[0].revivalblessing,
       moves: (active?.moves ?? []).map(option => {
         const move = Dex.moves.get(option.id);
         return {

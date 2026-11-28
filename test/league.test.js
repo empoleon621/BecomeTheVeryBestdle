@@ -150,11 +150,23 @@ test('Prankster avoids targeting Dark opponents while retaining self-targeted re
   assert.ok(original.view().log.some(entry => entry.message === 'Sableye used Will-O-Wisp!'));
   assert.ok(original.view().log.some(entry => entry.message === 'It had no effect on Chien-Pao.'));
 
-  const updated = new LeagueRun(typedEliteFrom, structuredClone(snapshot));
+  const soloSableye = () => {
+    const run = new LeagueRun(typedEliteFrom, structuredClone(snapshot));
+    // Isolate move selection from the trainer's option to switch out.
+    const {p2} = run.battle;
+    for (const member of p2.pokemon.slice(1)) {
+      member.hp = 0;
+      member.fainted = true;
+    }
+    p2.pokemonLeft = 1;
+    return run;
+  };
+  const updated = soloSableye();
   assert.ok(updated.choose(setup));
   assert.ok(updated.view().log.some(entry => entry.message === 'Sableye used Knock Off!'));
 
-  const healing = new LeagueRun(typedEliteFrom, structuredClone(snapshot));
+  const healing = soloSableye();
+  Object.assign(healing.battle.p1.active[0].boosts, {atk: -6, spa: -6});
   const sableye = healing.battle.p2.active[0];
   sableye.sethp(Math.floor(sableye.maxhp / 4));
   assert.ok(healing.choose(setup));

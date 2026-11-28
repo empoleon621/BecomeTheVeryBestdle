@@ -3,7 +3,9 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "engines": {"node": ">=22.13.0"},
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
@@ -15,7 +17,8 @@
   },
   "dependencies": {
     "@pkmn/randoms": "0.11.0",
-    "@pkmn/sim": "0.11.0"
+    "@pkmn/sim": "0.11.0",
+    "@smogon/calc": "0.12.0"
   },
   "devDependencies": {
     "vite": "^7.3.0",

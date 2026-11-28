@@ -282,13 +282,15 @@ function actions(view) {
   }
   if (screen === 'party') {
     const member = view.team.find(pokemon => pokemon.id === partySelected);
-    const canSwitch = member?.hp && !member.active && (!view.trapped || view.forced);
-    return `<div class="submenu-head"><h3>${view.forced ? 'Choose a replacement' : 'Party'}</h3>${back}</div>${error}
+    const canSwitch = member && !member.active && (view.reviving ? member.hp === 0 :
+      member.hp > 0 && (!view.trapped || view.forced));
+    const title = view.reviving ? 'Choose a Pokémon to revive' : view.forced ? 'Choose a replacement' : 'Party';
+    return `<div class="submenu-head"><h3>${title}</h3>${back}</div>${error}
       <div class="party-grid">${view.team.map(pokemon => memberRow(pokemon, 'party', partySelected)).join('')}</div>
       <div class="submenu-foot">
         <p>${view.trapped && !view.forced ? 'Your Pokémon is trapped.' : member ? escape(member.name) : 'Select a Pokémon.'}</p>
         <button class="secondary" data-inspect="${escape(member?.id)}" ${!member ? 'disabled' : ''}>Summary</button>
-        <button class="primary" data-command="switch ${member?.slot}" ${!canSwitch ? 'disabled' : ''}>Switch</button>
+        <button class="primary" data-command="switch ${member?.slot}" ${!canSwitch ? 'disabled' : ''}>${view.reviving ? 'Revive' : 'Switch'}</button>
       </div>`;
   }
   const bag = bagContent(view);
