@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import {Dex, TeamValidator} from '@pkmn/sim';
-import {dailyLeague, dayKey, draftTeam, expandedElitePoolsFrom, isArchiveDay, resetAt, rewardOffers, rewards} from '../src/league.js';
+import {dailyLeague, dayKey, draftTeam, expandedElitePoolsFrom, isArchiveDay, resetAt, rewardOffers, rewards, typedEliteFrom} from '../src/league.js';
 import {LeagueRun} from '../src/battle.js';
 import {eliteMonotypeSets} from '../src/elite-monotype-sets.js';
 import {trainers} from '../src/trainer-rosters.js';
@@ -68,7 +68,10 @@ test('the imported sets are National Dex legal at every Elite Four level', () =>
 });
 
 test('a National Dex opponent can use a move absent from Scarlet and Violet', () => {
-  const run = new LeagueRun('2026-12-21', {round: 2});
+  const day = '2026-12-21';
+  const round = dailyLeague(day).findIndex(trainer => trainer.team.some(set => set.species === 'Dracovish'));
+  assert.ok(round >= 0);
+  const run = new LeagueRun(day, {round});
   assert.ok(run.start(run.view().team[0].id));
   const {battle} = run;
   const slot = battle.p2.pokemon.findIndex(pokemon => pokemon.species.id === 'dracovish') + 1;
@@ -99,6 +102,7 @@ test('daily rotation draws legal Elite Four subsets and full Champion teams', ()
     assert.deepEqual(dailyLeague(date), league);
     assert.equal(league.length, 5);
     assert.equal(new Set(league.map(trainer => trainer.name)).size, 5);
+    if (date >= typedEliteFrom) assert.equal(new Set(league.slice(0, 4).map(trainer => trainer.type)).size, 4, date);
     assert.equal(league[4].type, 'Champion');
     lineups.add(league.map(trainer => trainer.name).join('/'));
     for (const [round, trainer] of league.entries()) {
@@ -108,6 +112,7 @@ test('daily rotation draws legal Elite Four subsets and full Champion teams', ()
         shortSizes.add(size);
         for (const set of trainer.team) {
           assert.ok(rosters.get(trainer.name).has(set.species), set.species);
+          if (date >= typedEliteFrom) assert.ok(Dex.species.get(set.species).types.includes(trainer.type), set.species);
           assert.equal(set.level, [73,75,77,79][round]);
           seen.get(trainer.name).add(Dex.species.get(set.species).baseSpecies);
         }
@@ -134,6 +139,26 @@ test('daily rotation draws legal Elite Four subsets and full Champion teams', ()
   assert.ok(lineups.size > 1);
   assert.deepEqual(shortSizes, new Set([4, 5]));
   for (const [name, species] of seen) assert.ok(species.size > 6, name);
+});
+
+test('Prankster avoids targeting Dark opponents while retaining self-targeted recovery', () => {
+  const original = new LeagueRun('2026-11-28', {round: 2});
+  assert.ok(original.start('chienpao'));
+  const snapshot = original.snapshot();
+  const setup = 'move ' + (original.view().moves.findIndex(move => move.id === 'swordsdance') + 1);
+  assert.ok(original.choose(setup));
+  assert.ok(original.view().log.some(entry => entry.message === 'Sableye used Will-O-Wisp!'));
+  assert.ok(original.view().log.some(entry => entry.message === 'It had no effect on Chien-Pao.'));
+
+  const updated = new LeagueRun(typedEliteFrom, structuredClone(snapshot));
+  assert.ok(updated.choose(setup));
+  assert.ok(updated.view().log.some(entry => entry.message === 'Sableye used Knock Off!'));
+
+  const healing = new LeagueRun(typedEliteFrom, structuredClone(snapshot));
+  const sableye = healing.battle.p2.active[0];
+  sableye.sethp(Math.floor(sableye.maxhp / 4));
+  assert.ok(healing.choose(setup));
+  assert.ok(healing.view().log.some(entry => entry.message === 'Sableye used Recover!'));
 });
 
 test('reload preserves the available choices, HP and the next turn outcome', () => {

@@ -1,5 +1,5 @@
 import {Battle, Dex, PRNG} from '@pkmn/sim';
-import {bagItems, dailyLeague, draftTeam, expandedElitePoolsFrom, rewardOffers, rewards, seedFor, speciesInfo} from './league.js';
+import {bagItems, dailyLeague, draftTeam, expandedElitePoolsFrom, rewardOffers, rewards, seedFor, speciesInfo, typedEliteFrom} from './league.js';
 import {newRunStats, recordMove, reportRun, trackBattle} from './run-stats.js';
 
 const formatid = 'gen9customgame@@@!Team Preview,Terastal Clause';
@@ -9,6 +9,7 @@ const healing = new Set(['recover', 'roost', 'strengthsap', 'morningsun', 'slack
 const setup = new Set(['dragondance', 'swordsdance', 'calmmind', 'bulkup', 'quiverdance', 'nastyplot']);
 const hazards = {spikes: 3, toxicspikes: 2, stealthrock: 1, stickyweb: 1};
 const inflictions = new Set(['toxic', 'willowisp', 'stunspore', 'spore', 'thunderwave', 'yawn']);
+const opposingTargets = new Set(['normal', 'adjacentFoe', 'randomNormal', 'any', 'allAdjacent', 'allAdjacentFoes']);
 const abilityImmunities = {
   levitate: ['Ground'], flashfire: ['Fire'], eartheater: ['Ground'], sapsipper: ['Grass'],
   waterabsorb: ['Water'], stormdrain: ['Water'], dryskin: ['Water'], voltabsorb: ['Electric'],
@@ -58,6 +59,7 @@ function cpuChoice(battle, seed, day) {
       .sort((a, b) => b.score - a.score)[0]?.command ?? 'default';
   }
   const available = request.active?.[0]?.moves ?? [];
+  const pranksterImmune = day >= typedEliteFrom && user.hasAbility('prankster') && !battle.dex.getImmunity('prankster', target);
   return available.map((option, index) => {
     if (option.disabled) return {score: -Infinity};
     const move = battle.dex.moves.get(option.id);
@@ -79,7 +81,8 @@ function cpuChoice(battle, seed, day) {
       score = 65;
     }
     const rankedScore = score + rng.random(15);
-    return {command: 'move ' + (index + 1), score: canPoison === false ? -1 : rankedScore};
+    const blockedByDark = pranksterImmune && move.category === 'Status' && opposingTargets.has(move.target);
+    return {command: 'move ' + (index + 1), score: canPoison === false || blockedByDark ? -1 : rankedScore};
   }).sort((a, b) => b.score - a.score)[0]?.command ?? 'default';
 }
 

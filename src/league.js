@@ -38,6 +38,7 @@ export function seedFor(key) {
 
 const stats = {hp: 85, atk: 85, def: 85, spa: 85, spd: 85, spe: 85};
 export const expandedElitePoolsFrom = '2026-11-27';
+export const typedEliteFrom = '2026-11-29';
 
 function eliteRoster(day, name, type, roster) {
   const originals = new Set(roster.map(set => Dex.species.get(set.species).baseSpecies));
@@ -62,12 +63,18 @@ export function dailyLeague(day) {
   const rng = new PRNG(seedFor('league/' + day));
   const eligible = trainers.slice();
   rng.shuffle(eligible);
-  return [...eligible.slice(0, 4), champions[rng.random(champions.length)]]
+  const specialists = day >= typedEliteFrom
+    ? eligible.filter(([, type], index) => eligible.findIndex(([, candidate]) => candidate === type) === index)
+    : eligible;
+  return [...specialists.slice(0, 4), champions[rng.random(champions.length)]]
     .map(([name, type, mark, roster], round) => {
       const base = roster.map(([species, ability, moves, item]) => ({
         species, ability, moves: moves.split(', '), item, evs: {...stats}, nature: 'Serious',
       }));
-      const picks = round < 4 && day >= expandedElitePoolsFrom ? eliteRoster(day, name, type, base) : base;
+      const themed = round < 4 && day >= typedEliteFrom
+        ? base.filter(set => Dex.species.get(set.species).types.includes(type))
+        : base;
+      const picks = round < 4 && day >= expandedElitePoolsFrom ? eliteRoster(day, name, type, themed) : themed;
       return {
         id: name.toLowerCase(), name, type, mark,
         team: picks.map(set => ({...structuredClone(set), level: [73, 75, 77, 79, 82][round]})),
